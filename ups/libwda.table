@@ -1,0 +1,14 @@
+FILE=TABLE
+PRODUCT=libwda
+#
+Group:
+  FLAVOR=ANY
+  QUALIFIERS=""
+    ACTION=SETUP
+        setupEnv()
+        proddir()
+        envPrepend(LD_LIBRARY_PATH,${UPS_PROD_DIR}/lib)
+        envPrepend(LIBRARY_PATH,${UPS_PROD_DIR}/lib)
+
+End:
+
