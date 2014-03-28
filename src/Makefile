@@ -1,7 +1,8 @@
 SRCDIR=../../fife_wda/
 VPATH=$(SRCDIR)
 GEN=wda_version.h
-LIB=libwda.a
+LIB=libwda.a 
+SHLIB=libwda.so
 HDR=ifbeam_c.h wda.h
 OBJ=ifbeam.o wda.o
 SRC= ifbeam.c wda.c
@@ -14,7 +15,7 @@ all: $(GEN) $(BIN) $(TST) $(LIB) $(SHLIB)
 install:
 	test -d ../lib || mkdir ../lib
 	test -d ../include/wda || mkdir -p ../include/wda
-	cp $(LIB) ../lib
+	cp $(LIB) $(SHLIB) ../lib
 	cp $(HDR) ../include
 
 clean:
@@ -23,6 +24,10 @@ clean:
 $(LIB): $(OBJ) $(UTLOBJ)
 	rm -f $(LIB)
 	ar qv $(LIB) $(OBJ) 
+
+$(SHLIB): $(OBJ) $(UTLOBJ)
+	rm -f $(LIB)
+	$(CC) -shared -o $(SHLIB) $(OBJ)
 
 wda_version.h: FORCE
 	echo '#define WDA_VERSION "'`git describe --tags --match 'wda*'`'"' > $@.new && mv $@.new $@ || true
