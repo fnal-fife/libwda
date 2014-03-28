@@ -26,7 +26,7 @@ $(LIB): $(OBJ) $(UTLOBJ)
 	ar qv $(LIB) $(OBJ) 
 
 $(SHLIB): $(OBJ) $(UTLOBJ)
-	rm -f $(LIB)
+	rm -f $(SHLIB)
 	$(CC) -shared -o $(SHLIB) $(OBJ)
 
 wda_version.h: FORCE
