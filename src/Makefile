@@ -14,7 +14,7 @@ all: $(GEN) $(BIN) $(TST) $(LIB) $(SHLIB)
 
 install:
 	test -d ../lib || mkdir ../lib
-	test -d ../include/wda || mkdir -p ../include/wda
+	test -d ../include || mkdir -p ../include
 	cp $(LIB) $(SHLIB) ../lib
 	cp $(HDR) ../include
 
