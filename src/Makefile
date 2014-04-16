@@ -27,7 +27,7 @@ $(LIB): $(OBJ) $(UTLOBJ)
 
 $(SHLIB): $(OBJ) $(UTLOBJ)
 	rm -f $(SHLIB)
-	$(CC) -shared -o $(SHLIB) $(OBJ)
+	$(CC) -shared -o $(SHLIB) $(ARCH) $(OBJ)
 
 wda_version.h: FORCE
 	echo '#define WDA_VERSION "'`git describe --tags --match 'wda*'`'"' > $@.new && mv $@.new $@ || true
@@ -38,4 +38,4 @@ FORCE:
 	gcc -c -o $@ $(CXXFLAGS) $< 
 
 test_ifbeam: test_ifbeam.o $(OBJ)
-	gcc -o ifbeam_test test_ifbeam.o $(OBJ) `test -r /usr/lib/libcurl.a && echo -Wl,-Bstatic` -lcurl -llber -lldap -Wl,-Bdynamic -lidn -lssl
+	gcc -o ifbeam_test test_ifbeam.o $(CXXFLAGS)  $(OBJ)  -lcurl -lssl
