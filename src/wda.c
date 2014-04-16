@@ -445,6 +445,11 @@ static DataRec *parse_csv(const char *s)
     register char *ss;
 
     ss = strdup(s);
+    if (ss == NULL) {
+        /* out of memory! */
+        PRINT_ALLOC_ERROR(malloc);
+        return NULL;
+    }
 
     DataRec *dataRec = (DataRec *)malloc(sizeof (DataRec));
     dataRec = (DataRec *)memset(dataRec, 0, sizeof (DataRec));
@@ -466,7 +471,7 @@ static DataRec *parse_csv(const char *s)
         if (dataRec->columns == NULL) {
             /* out of memory! */
             PRINT_ALLOC_ERROR(malloc);
-            return 0;
+            return NULL;
         }
         memset(dataRec->columns, 0, csize);                         // Clear the column pointers
 
@@ -520,6 +525,7 @@ Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int
         *error = errno;
         return NULL;
     }
+    /* Important! Must be zeroed - code relies on it */
     memset(response->dataRecs, 0, response->nrows*sizeof(DataRec));
 
     return (Dataset)response;
@@ -628,15 +634,20 @@ double getDoubleValue(Tuple tuple, int position, int *error)
 
 int getStringValue(Tuple tuple, int position, char *buffer, int buffer_size, int *error)
 {
+	char *cp;
     DataRec *dataRec = (DataRec *)tuple;
     if (position < 0 || position >= dataRec->ncolumns) {
         *error = EINVAL;
         return -1;
     }
 ////strncpy(buffer, dataRec->columns[position], buffer_size);
+    *error = 0;
     if (dataRec->columns[position] > 0) {
-        memccpy(buffer, dataRec->columns[position], 0, buffer_size);
-        *error = 0;
+        cp = memccpy(buffer, dataRec->columns[position], 0, buffer_size-1);
+        if (cp==NULL) {						// There was no enough space in the destination buffer
+            buffer[buffer_size-1] = '\0';	// Terminate the string
+		    *error = EINVAL;
+        }
         return strlen(buffer);
     }
     *error = EINVAL;
@@ -717,7 +728,12 @@ int releaseDataset(Dataset dataset)
         }
     }
     /* Second, release dataset itself       */
-    return destroyHttpResponse((HttpResponse *)dataset);
+# if DEBUG
+    fprintf(stderr, "releaseDataset: about to free %p\n", dataset);
+# endif
+    destroyHttpResponse((HttpResponse *)dataset);
+    free(dataset);
+    return 0;
 }
 
 
