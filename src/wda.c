@@ -24,7 +24,7 @@ typedef struct {
     size_t ncolumns;    // Number of columns in CSV row
     size_t nelements;   // Number of elements in data array
     char **columns;     // Pointers to columns
-    double data[2];     // The data array
+//    double data[2];     // The data array
 } DataRec;
 
 
@@ -46,6 +46,36 @@ static HttpResponse get_http_response(const char *url, const char *headers[], si
 
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
             " at %s:%d\n", #a, __FILE__, __LINE__)
+
+# if 0
+typedef struct {
+    unsigned long size,resident,share,text,lib,data,dt;
+} statm_t;
+
+
+void read_off_memory_status(statm_t *result)
+{
+    unsigned long dummy;
+    const char* statm_path = "/proc/self/statm";
+
+    FILE *f = fopen(statm_path,"r");
+    if (!f) {
+        perror(statm_path);
+        abort();
+    }
+    if (7 != fscanf(f,"%ld %ld %ld %ld %ld %ld %ld",
+        &result->size,&result->resident,&result->share,&result->text,&result->lib,&result->data,&result->dt))
+    {
+        perror(statm_path);
+        abort();
+    }
+    fclose(f);
+    fprintf(stderr, "********* total=%ldkB, resident=%ldkB, shared=%ldkB, text=%ldkB, (data+stack)=%ldkB *********\n\n",
+        result->size*4, result->resident*4, result->share*4, result->text*4, result->data*4);
+}
+# endif
+
+
 
 /*
  * Generates a random string of specified size
@@ -101,6 +131,9 @@ static char *MD5Signature(const char *pwd, const char *salt, const char *args, c
  */
 static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
+# if 0
+    statm_t stat;
+# endif
     size_t realsize = size * nmemb;
     HttpResponse *response = (HttpResponse *)userp;
 
@@ -114,6 +147,10 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     memcpy(&(response->memory[response->size]), contents, realsize);
     response->size += realsize;
     response->memory[response->size] = 0;
+# if 0
+    fprintf(stderr, "writeMemoryCallback: processed %d bytes\n", realsize);
+    read_off_memory_status(&stat);
+# endif
 
     return realsize;
 }
@@ -358,10 +395,11 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
     fprintf(stderr, "get_data_rows: %d lines retrieved\n", k);
 # endif
     /* Allocate memory for array of rows */
-    response.rows = (char **)malloc(sizeof(char *) * k + 8);
+//  response.rows = (char **)malloc(sizeof(char *) * k + 8);
+    response.rows = (char **)calloc(k+2, sizeof(char *));
     if (response.rows == NULL) {
         /* out of memory! */
-        PRINT_ALLOC_ERROR(malloc);
+        PRINT_ALLOC_ERROR(calloc);
         response.size = 0;
         return response;
     }
@@ -447,7 +485,7 @@ static DataRec *parse_csv(const char *s)
     ss = strdup(s);
     if (ss == NULL) {
         /* out of memory! */
-        PRINT_ALLOC_ERROR(malloc);
+        PRINT_ALLOC_ERROR(strdup);
         return NULL;
     }
 
@@ -466,14 +504,15 @@ static DataRec *parse_csv(const char *s)
         //fprintf(stderr, "parse_csv: n=%d\n", ncol);
         dataRec->ncolumns = ++ncol;                                 // Store the number of columns
         
-        size_t csize = sizeof(char *) * dataRec->ncolumns;          // Allocated memory size
-        dataRec->columns = (char **)malloc(csize);                  // Allocate pointers to column data
+//      size_t csize = sizeof(char *) * dataRec->ncolumns;          // Allocated memory size
+//      dataRec->columns = (char **)malloc(csize);                  // Allocate pointers to column data
+        dataRec->columns = (char **)calloc(dataRec->ncolumns, sizeof(char *));  // Allocate pointers to column data
         if (dataRec->columns == NULL) {
             /* out of memory! */
-            PRINT_ALLOC_ERROR(malloc);
+            PRINT_ALLOC_ERROR(calloc);
             return NULL;
         }
-        memset(dataRec->columns, 0, csize);                         // Clear the column pointers
+//      memset(dataRec->columns, 0, csize);                         // Clear the column pointers
 
         sp = ss;                                                    // Start from the begining of the line
         //fprintf(stderr, "parse_csv: s='%s'\n", ss);
@@ -487,6 +526,7 @@ static DataRec *parse_csv(const char *s)
             }
         }
     } 
+//    fprintf(stderr, "parse_csv: allocated=%d(hdr)+%d(arr)+%d(str)\n", sizeof(DataRec), csize, strlen(s));
     return dataRec;
 }
 
@@ -499,6 +539,9 @@ Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int
     int err;
     HttpResponse *response;
     char user_agent[256];
+# if 0
+    statm_t stat;
+# endif
     
     snprintf(user_agent, 256, "User-Agent: %s", uagent);
     const char *headers[] = {user_agent, NULL};
@@ -514,19 +557,27 @@ Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int
         return NULL;
     }
     *response = get_data_rows(url, headers, 1, timeout, &err);
+# if 0
+    fprintf(stderr, "getDataWithTimeout: after get_data_rows call\n");
+    read_off_memory_status(&stat);
+# endif
     if (err) {
         *error = errno = ENODATA;
     }
     /* Now grow the response structure to allocate space for dataRecs array */
-    response = (HttpResponse *)realloc(response, sizeof (HttpResponse) + response->nrows*sizeof(DataRec));
+    response = (HttpResponse *)realloc(response, sizeof (HttpResponse) + response->nrows*sizeof(DataRec *));
     if (response == NULL) {
         /* out of memory! */
-        PRINT_ALLOC_ERROR(malloc);
+        PRINT_ALLOC_ERROR(realloc);
         *error = errno;
         return NULL;
     }
     /* Important! Must be zeroed - code relies on it */
-    memset(response->dataRecs, 0, response->nrows*sizeof(DataRec));
+    memset(response->dataRecs, 0, response->nrows*sizeof(DataRec *));
+# if 0
+    fprintf(stderr, "getDataWithTimeout: after allocating space for dataRecs array (%d * %d)\n", response->nrows, sizeof(DataRec *));
+    read_off_memory_status(&stat);
+# endif
 
     return (Dataset)response;
 }
@@ -717,6 +768,8 @@ int releaseDataset(Dataset dataset)
 {
     int i;
     HttpResponse *response = (HttpResponse *)dataset;
+    if (response == NULL)
+        return 0;
     /* First, release all stored dataRecs   */
     for (i = 0; i < response->nrows; i++) {
         if (response->dataRecs[i] > 0) {
