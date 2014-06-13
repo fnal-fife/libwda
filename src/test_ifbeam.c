@@ -14,7 +14,7 @@ typedef struct {
     unsigned long size,resident,share,text,lib,data,dt;
 } statm_t;
 
-#if 0
+#if 1
 void read_off_memory_status(statm_t *result)
 {
     unsigned long dummy;
