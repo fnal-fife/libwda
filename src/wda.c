@@ -276,7 +276,7 @@ static HttpResponse get_csv_file(const char *url, int *status)
 
     initHttpResponse(&response);
 
-    FILE *fp = fopen(url, "r");
+    FILE *fp = fopen(url, "rb");
 //    fprintf(stderr, "Open file '%s'\n", url);
 
     if (fp != NULL) {
