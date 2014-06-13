@@ -10,10 +10,39 @@
  * Note: This code uses wda module. In order to compile it needs files wda.h and wda.o to be present.
  */
 
+typedef struct {
+    unsigned long size,resident,share,text,lib,data,dt;
+} statm_t;
+
+#if 0
+void read_off_memory_status(statm_t *result)
+{
+    unsigned long dummy;
+    const char* statm_path = "/proc/self/statm";
+
+    FILE *f = fopen(statm_path,"r");
+    if (!f) {
+        perror(statm_path);
+        abort();
+    }
+    if (7 != fscanf(f,"%ld %ld %ld %ld %ld %ld %ld",
+        &result->size,&result->resident,&result->share,&result->text,&result->lib,&result->data,&result->dt))
+    {
+        perror(statm_path);
+        abort();
+    }
+    fclose(f);
+    fprintf(stderr, "********* total=%ldkB, resident=%ldkB, shared=%ldkB, text=%ldkB, (data+stack)=%ldkB *********\n\n",
+        result->size*4, result->resident*4, result->share*4, result->text*4, result->data*4);
+}
+# endif
+
+
 int main(void) 
 {
     int i, j, k;
     int err;
+    statm_t stat;
 
 //    const char *url = "http://dbdata0.fnal.gov:8099/ifbeam/data";
     const char *url = "http://dbweb4.fnal.gov:8088/ifbeam/data";
@@ -164,8 +193,14 @@ int main(void)
     
 # endif    
 
+    //
+    read_off_memory_status(&stat);
+    //
     fprintf(stderr, "#######Release dataset...\n");
     releaseDataset(ds);                                             // Release dataset to prevent memory leak!
+    //
+    read_off_memory_status(&stat);
+    //
 
 
 
@@ -189,7 +224,6 @@ int main(void)
         }
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
     } 
-//    releaseTuple(tu);                                   // Do not forget to release the structure if you do not need it
 
 
 //==============================================    
@@ -210,11 +244,17 @@ int main(void)
     } else {
         fprintf(stderr, "No such tuple"); perror("...");
     }
-//    releaseTuple(tu);                                   // Do not forget to release the structure if you do not need it
     
 
     
+    //
+    read_off_memory_status(&stat);
+    //
+    fprintf(stderr, "#######Release dataset...\n");
     releaseDataset(ds);                                             // Release dataset to prevent memory leak!
+    //
+    read_off_memory_status(&stat);
+    //
 # endif    
     
     return 0;
