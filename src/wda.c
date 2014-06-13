@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <time.h>
 #include <errno.h>
@@ -41,7 +42,7 @@ typedef struct {
 
 static int destroyHttpResponse(HttpResponse *response);
 static int initHttpResponse(HttpResponse *response);
-static HttpResponse get_http_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status);
+static HttpResponse get_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status);
 
 
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
@@ -164,11 +165,12 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
  */
 void *getHTTP(const char *url, const char *headers[], size_t nheaders, size_t *length, int *status)
 {
-    HttpResponse response = get_http_response(url, headers, nheaders, 0, status);
+    HttpResponse response = get_response(url, headers, nheaders, 0, status);
 
     *length = response.size;                // Return data length
     return (void *)response.memory;         // Return pointer to the buffer
 }
+
 
 
 /*
@@ -260,6 +262,81 @@ static HttpResponse get_http_response(const char *url, const char *headers[], si
 
     *status = ret;                          // Return status
     return response;                        // Return response structure
+}
+
+
+
+/*
+ * Internal common function
+ */
+static HttpResponse get_csv_file(const char *url, int *status)
+{
+    HttpResponse response;
+    int i, k;
+
+    initHttpResponse(&response);
+
+    FILE *fp = fopen(url, "r");
+//    fprintf(stderr, "Open file '%s'\n", url);
+
+    if (fp != NULL) {
+        /* Go to the end of the file. */
+        if (fseek(fp, 0L, SEEK_END) == 0) {
+            /* Get the size of the file. */
+            long bufsize = ftell(fp);
+            if (bufsize > 0) {
+                /* Allocate our buffer to that size. */
+                response.memory = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
+                if (response.memory == NULL) {
+                    /* out of memory! */
+                    PRINT_ALLOC_ERROR(realloc);
+                    *status = errno;                    // Return status
+                    return response;
+                }
+                /* Go back to the start of the file. */
+                if (fseek(fp, 0L, SEEK_SET) != 0) { /* Error */ }
+
+                /* Read the entire file into memory. */
+                size_t newLen = fread(response.memory, sizeof(char), bufsize, fp);
+                if (newLen == bufsize) {
+                    response.memory[newLen+1] = '\0';   // Just to be safe
+                    response.size = newLen;
+                    response.http_code = 200;
+                    *status = 0;                        // Return status
+                } else { /* Error */ }
+            }
+        }
+        if (ferror(fp)) {
+            *status = errno;                            // Return status
+            fprintf(stderr, "Error reading file '%s'\n", url);
+        }
+        fclose(fp);
+    } else {
+        fprintf(stderr, "Error opening file '%s'\n", url);
+    }
+
+    return response;                        // Return response structure
+}
+
+
+
+/*
+ * Internal common function
+ */
+static HttpResponse get_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status)
+{
+    const char *fp = "file://";
+//  const char *hp = "http://";
+
+    if (strncasecmp(url, fp, strlen(fp))==0) {
+
+        return get_csv_file(url+strlen(fp), status);
+
+    } else {
+
+        return get_http_response(url, headers, nheaders, timeout, status);
+
+    }
 }
 
 
@@ -378,7 +455,7 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
     char *row;
     char *running;
 
-    HttpResponse response = get_http_response(url, headers, nheaders, timeout, status);
+    HttpResponse response = get_response(url, headers, nheaders, timeout, status);
 
 # if DEBUG
     fprintf(stderr, "get_data_rows: %lu bytes retrieved\n", (long)response.size);
@@ -473,7 +550,7 @@ static int destroyDataRec(DataRec *dataRec)
 /*
  * Function to parse one row in CSV format.
  */
-static DataRec *parse_csv(const char *s)
+static DataRec *parse_csv_row(const char *s)
 {
     char *cp;
     char *sp;
@@ -623,7 +700,7 @@ Tuple getTuple(Dataset dataset, int idx)
         dataRec = response->dataRecs[idx];
     } else {
 //    fprintf(stderr, "Store in cache\n");
-        dataRec = parse_csv(response->rows[idx]);          // parse the line
+        dataRec = parse_csv_row(response->rows[idx]);       // parse the line
         response->dataRecs[idx] = dataRec;
     }
     (response->idx) = idx + 1;
