@@ -1,4 +1,4 @@
-#define _GNU_SOURCE 
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <string.h>
@@ -43,6 +43,7 @@ typedef struct {
 static int destroyHttpResponse(HttpResponse *response);
 static int initHttpResponse(HttpResponse *response);
 static HttpResponse get_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status);
+static inline HttpResponse mget_response(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status);
 
 
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
@@ -269,6 +270,106 @@ static HttpResponse get_http_response(const char *url, const char *headers[], si
 /*
  * Internal common function
  */
+static HttpResponse mget_http_response(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+{
+    CURL *curl_handle;
+    CURLcode ret = CURLE_FAILED_INIT;
+
+    HttpResponse response;
+
+    int i, k;
+    time_t t0 = time(NULL);
+    time_t t1 = t0;
+
+    initHttpResponse(&response);
+
+    curl_global_init(CURL_GLOBAL_ALL);
+
+    /* init the curl session */
+    curl_handle = curl_easy_init();
+
+    if (curl_handle) {
+        struct curl_slist *headerlist = NULL;
+        char user_agent[256];
+        snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
+        if (headers) {
+            for (i = 0; i < nheaders; i++) {
+                if (headers[i])
+                    headerlist = curl_slist_append(headerlist, headers[i]);
+            }
+        }
+        headerlist = curl_slist_append(headerlist, user_agent);
+
+        /* send all data to this function  */
+        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, writeMemoryCallback);
+
+        /* we pass our 'response' struct to the callback function */
+        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&response);
+
+        /* Enable redirection */
+        curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1);
+
+        ret = curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);    /* Set extra headers            */
+
+        int iurl = random() % nurls;    // Random choice for first URL to try
+
+        k = 0;
+        do {
+# if 1
+            fprintf(stderr, "mget_http_response: URL index=%d\n", iurl);
+# endif
+            /* specify URL to get */
+            curl_easy_setopt(curl_handle, CURLOPT_URL, urls[iurl]);
+            /* get it! */
+            destroyHttpResponse(&response);
+            initHttpResponse(&response);
+            ret = curl_easy_perform(curl_handle);
+            *status = ret;
+            if (ret != CURLE_OK) {                                              /* Check for errors             */
+                fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(ret));
+                response.size = 0;
+                response.http_code = 0;
+            } else {
+                    curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response.http_code);
+                if (response.http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
+                    //Succeeded
+                    break;
+                } else {
+                    //Failed
+# if DEBUG
+                    fprintf(stderr, "HTTP status code=%d: '%s'\n", response.http_code, response.memory);
+# endif
+                }
+            }
+            int d = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
+            sleep(d);
+            t1 = time(NULL);
+
+            iurl = ++iurl % nurls;          // Go to next URL in a loop
+# if DEBUG
+            fprintf(stderr, "ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", ret, k, d, t0, t1, timeout);
+# endif
+        } while ((t1 - t0) < timeout);
+
+        /* cleanup curl stuff */
+        curl_easy_cleanup(curl_handle);
+        curl_slist_free_all(headerlist);                                        /* Free the custom headers      */
+# if DEBUG
+        fprintf(stderr, "mget_http_response: %lu bytes retrieved\n", (long)response.size);
+# endif
+    }
+    /* we're done with libcurl, so clean it up */
+    curl_global_cleanup();
+
+    *status = ret;                          // Return status
+    return response;                        // Return response structure
+}
+
+
+
+/*
+ * Internal common function
+ */
 static HttpResponse get_csv_file(const char *url, int *status)
 {
     HttpResponse response;
@@ -341,6 +442,15 @@ static HttpResponse get_response(const char *url, const char *headers[], size_t 
 
 
 /*
+ * Internal common function
+ */
+static inline HttpResponse mget_response(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+{
+    return mget_http_response(urls, nurls, headers, nheaders, timeout, status);
+}
+
+
+/*
  *
  */
 void postHTTPsigned(const char *url, const char* password, const char *headers[], size_t nheaders, const char *data, size_t length, int *status)
@@ -397,7 +507,7 @@ void postHTTPsigned(const char *url, const char* password, const char *headers[]
 //  headerlist = curl_slist_append(headerlist, "X-Signature: .....");
 //
 //  res = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerlist);
-//  ...... 
+//  ......
 //  res = curl_easy_perform(curl);
 //  ......
 //  curl_easy_cleanup(curl);
@@ -436,7 +546,7 @@ void postHTTP(const char *url, const char *headers[], size_t nheaders, const cha
             fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(ret));
         }
         curl_easy_cleanup(curl);                                                /* Cleanup                      */
-        
+
         curl_slist_free_all(headerlist);                                        /* Free the custom headers      */
     }
     curl_global_cleanup();                                                      /* Cleanup                      */
@@ -470,6 +580,57 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
     }
 # if DEBUG
     fprintf(stderr, "get_data_rows: %d lines retrieved\n", k);
+# endif
+    /* Allocate memory for array of rows */
+//  response.rows = (char **)malloc(sizeof(char *) * k + 8);
+    response.rows = (char **)calloc(k+2, sizeof(char *));
+    if (response.rows == NULL) {
+        /* out of memory! */
+        PRINT_ALLOC_ERROR(calloc);
+        response.size = 0;
+        return response;
+    }
+    response.nrows = k;
+
+    /* Now break response to the rows */
+    running = response.memory;                                  // Start from the beginning of the response buffer
+    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+        //fprintf(stderr, "t = '%s'\n", row);
+        //fprintf(stderr, "running = '%lx'\n", running);
+        response.rows[k] = row;                                 // Store pointer to the line
+    }
+
+    return response;
+}
+
+
+
+/*
+ * The function communicates with the server using CURL library
+ * It returns the structure which contains the array of rows as strings
+ * along with its size.
+ */
+static HttpResponse mget_data_rows(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+{
+    int i, k;
+    char *row;
+    char *running;
+
+    HttpResponse response = mget_response(urls, nurls, headers, nheaders, timeout, status);
+
+# if DEBUG
+    fprintf(stderr, "mget_data_rows: %lu bytes retrieved\n", (long)response.size);
+# endif
+    if (response.http_code != 200) {
+        return response;
+    }
+    /* Calculate the number of rows */
+    for (i = 0, k = 0; i < response.size; i++) {
+      if (response.memory[i]=='\n')
+          k++;
+    }
+# if DEBUG
+    fprintf(stderr, "mget_data_rows: %d lines retrieved\n", k);
 # endif
     /* Allocate memory for array of rows */
 //  response.rows = (char **)malloc(sizeof(char *) * k + 8);
@@ -532,7 +693,7 @@ static int initHttpResponse(HttpResponse *response)
 /*
  * The function deallocates used memory buffers.
  */
-static int destroyDataRec(DataRec *dataRec) 
+static int destroyDataRec(DataRec *dataRec)
 {
     if (dataRec!=NULL) {
         if (dataRec->columns!=NULL) {
@@ -580,7 +741,7 @@ static DataRec *parse_csv_row(const char *s)
         }
         //fprintf(stderr, "parse_csv: n=%d\n", ncol);
         dataRec->ncolumns = ++ncol;                                 // Store the number of columns
-        
+
 //      size_t csize = sizeof(char *) * dataRec->ncolumns;          // Allocated memory size
 //      dataRec->columns = (char **)malloc(csize);                  // Allocate pointers to column data
         dataRec->columns = (char **)calloc(dataRec->ncolumns, sizeof(char *));  // Allocate pointers to column data
@@ -602,7 +763,7 @@ static DataRec *parse_csv_row(const char *s)
                 cp = sp + 1;
             }
         }
-    } 
+    }
 //    fprintf(stderr, "parse_csv: allocated=%d(hdr)+%d(arr)+%d(str)\n", sizeof(DataRec), csize, strlen(s));
     return dataRec;
 }
@@ -619,11 +780,11 @@ Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int
 # if 0
     statm_t stat;
 # endif
-    
+
     snprintf(user_agent, 256, "User-Agent: %s", uagent);
     const char *headers[] = {user_agent, NULL};
 # if DEBUG
-    fprintf(stderr, "getData: url='%s'\n", url);
+    fprintf(stderr, "getDataWithTimeout: url='%s'\n", url);
 # endif
     *error = errno = 0;
     response = (HttpResponse *)malloc(sizeof (HttpResponse));
@@ -658,6 +819,59 @@ Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int
 
     return (Dataset)response;
 }
+
+
+/*
+ * Low level generic function which returns the whole dataset
+ */
+Dataset muxGetDataWithTimeout(const char *urls[], size_t nurls, const char *uagent, int timeout, int *error)
+{
+    int err;
+    HttpResponse *response;
+    char user_agent[256];
+# if 0
+    statm_t stat;
+# endif
+
+    snprintf(user_agent, 256, "User-Agent: %s", uagent);
+    const char *headers[] = {user_agent, NULL};
+# if DEBUG
+    fprintf(stderr, "muxGetDataWithTimeout: url='%s'\n", url);
+# endif
+    *error = errno = 0;
+    response = (HttpResponse *)malloc(sizeof (HttpResponse));
+    if (response == NULL) {
+        /* out of memory! */
+        PRINT_ALLOC_ERROR(malloc);
+        *error = errno;
+        return NULL;
+    }
+    *response = mget_data_rows(urls, nurls, headers, 1, timeout, &err);
+# if 0
+    fprintf(stderr, "getDataWithTimeout: after get_data_rows call\n");
+    read_off_memory_status(&stat);
+# endif
+    if (err) {
+        *error = errno = ENODATA;
+    }
+    /* Now grow the response structure to allocate space for dataRecs array */
+    response = (HttpResponse *)realloc(response, sizeof (HttpResponse) + response->nrows*sizeof(DataRec *));
+    if (response == NULL) {
+        /* out of memory! */
+        PRINT_ALLOC_ERROR(realloc);
+        *error = errno;
+        return NULL;
+    }
+    /* Important! Must be zeroed - code relies on it */
+    memset(response->dataRecs, 0, response->nrows*sizeof(DataRec *));
+# if 0
+    fprintf(stderr, "getDataWithTimeout: after allocating space for dataRecs array (%d * %d)\n", response->nrows, sizeof(DataRec *));
+    read_off_memory_status(&stat);
+# endif
+
+    return (Dataset)response;
+}
+
 
 /*
  * Low level generic function which returns the whole dataset. Uses default timeout for request
@@ -726,7 +940,7 @@ Tuple getNextTuple(Dataset dataset)
     HttpResponse *response;
 
     response = (HttpResponse *)dataset;
-    
+
     return getTuple(dataset, response->idx);
 }
 
