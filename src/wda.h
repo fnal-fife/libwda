@@ -37,6 +37,8 @@ Dataset getData(const char *url, const char *uagent, int *error);
 
 Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int *error);
 
+Dataset muxGetDataWithTimeout(const char *url, const char *urls[], size_t nurls, const char *uagent, int timeout, int *error);
+
 /*
  * Functions to work with the tuples in the dataset
  */

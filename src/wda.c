@@ -43,7 +43,7 @@ typedef struct {
 static int destroyHttpResponse(HttpResponse *response);
 static int initHttpResponse(HttpResponse *response);
 static HttpResponse get_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status);
-static inline HttpResponse mget_response(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status);
+static inline HttpResponse mget_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status);
 
 
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
@@ -173,7 +173,7 @@ void *getHTTP(const char *url, const char *headers[], size_t nheaders, size_t *l
 }
 
 
-
+# if 0
 /*
  * Internal common function
  */
@@ -264,13 +264,16 @@ static HttpResponse get_http_response(const char *url, const char *headers[], si
     *status = ret;                          // Return status
     return response;                        // Return response structure
 }
-
+# endif
 
 
 /*
  * Internal common function
+ * Main finction, does all work using libcurl.
+ * If 'url' argument is present uses it as a primary source.
+ * If 'urls' argument is present uses it as a backup sources with the first randomly selected and then goes round robin.
  */
-static HttpResponse mget_http_response(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+static HttpResponse mget_http_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
 {
     CURL *curl_handle;
     CURLcode ret = CURLE_FAILED_INIT;
@@ -280,8 +283,23 @@ static HttpResponse mget_http_response(const char *urls[], size_t nurls, const c
     int i, k;
     time_t t0 = time(NULL);
     time_t t1 = t0;
+    int iurl = 0;
+    const char *aurl = NULL;
 
     initHttpResponse(&response);
+
+    if (url==NULL && (urls==NULL || nurls==0)) {
+        // Both url and urls are not set
+        *status = ret;              // Return status
+        return response;            // Return response structure
+    }
+    if (urls!=NULL && nurls > 0) {
+        iurl = random() % nurls;    // Random choice for first URL to try
+        aurl = urls[iurl];
+    }
+    if (url!=NULL) {
+        aurl = url;                 // Primary URL is present so start with it
+    }
 
     curl_global_init(CURL_GLOBAL_ALL);
 
@@ -311,15 +329,13 @@ static HttpResponse mget_http_response(const char *urls[], size_t nurls, const c
 
         ret = curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);    /* Set extra headers            */
 
-        int iurl = random() % nurls;    // Random choice for first URL to try
-
         k = 0;
         do {
-# if 1
+# if 0
             fprintf(stderr, "mget_http_response: URL index=%d\n", iurl);
 # endif
             /* specify URL to get */
-            curl_easy_setopt(curl_handle, CURLOPT_URL, urls[iurl]);
+            curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
             /* get it! */
             destroyHttpResponse(&response);
             initHttpResponse(&response);
@@ -345,7 +361,10 @@ static HttpResponse mget_http_response(const char *urls[], size_t nurls, const c
             sleep(d);
             t1 = time(NULL);
 
-            iurl = ++iurl % nurls;          // Go to next URL in a loop
+            if (nurls > 0) {
+                iurl = ++iurl % nurls;          // Go to next URL in a loop
+                aurl = urls[iurl];
+            }
 # if DEBUG
             fprintf(stderr, "ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", ret, k, d, t0, t1, timeout);
 # endif
@@ -435,7 +454,7 @@ static HttpResponse get_response(const char *url, const char *headers[], size_t 
 
     } else {
 
-        return get_http_response(url, headers, nheaders, timeout, status);
+        return mget_http_response(url, NULL, 0, headers, nheaders, timeout, status);
 
     }
 }
@@ -444,9 +463,9 @@ static HttpResponse get_response(const char *url, const char *headers[], size_t 
 /*
  * Internal common function
  */
-static inline HttpResponse mget_response(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+static inline HttpResponse mget_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
 {
-    return mget_http_response(urls, nurls, headers, nheaders, timeout, status);
+    return mget_http_response(url, urls, nurls, headers, nheaders, timeout, status);
 }
 
 
@@ -610,13 +629,13 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
  * It returns the structure which contains the array of rows as strings
  * along with its size.
  */
-static HttpResponse mget_data_rows(const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
 {
     int i, k;
     char *row;
     char *running;
 
-    HttpResponse response = mget_response(urls, nurls, headers, nheaders, timeout, status);
+    HttpResponse response = mget_response(url, urls, nurls, headers, nheaders, timeout, status);
 
 # if DEBUG
     fprintf(stderr, "mget_data_rows: %lu bytes retrieved\n", (long)response.size);
@@ -822,9 +841,10 @@ Dataset getDataWithTimeout(const char *url, const char *uagent, int timeout, int
 
 
 /*
- * Low level generic function which returns the whole dataset
+ * Low level generic function which returns the whole dataset.
+ * Retries the request while total time is less than specified timeout.
  */
-Dataset muxGetDataWithTimeout(const char *urls[], size_t nurls, const char *uagent, int timeout, int *error)
+Dataset muxGetDataWithTimeout(const char *url, const char *urls[], size_t nurls, const char *uagent, int timeout, int *error)
 {
     int err;
     HttpResponse *response;
@@ -833,7 +853,7 @@ Dataset muxGetDataWithTimeout(const char *urls[], size_t nurls, const char *uage
     statm_t stat;
 # endif
 
-    snprintf(user_agent, 256, "User-Agent: %s", uagent);
+    snprintf(user_agent, sizeof (user_agent), "User-Agent: %s", uagent);
     const char *headers[] = {user_agent, NULL};
 # if DEBUG
     fprintf(stderr, "muxGetDataWithTimeout: url='%s'\n", url);
@@ -846,9 +866,9 @@ Dataset muxGetDataWithTimeout(const char *urls[], size_t nurls, const char *uage
         *error = errno;
         return NULL;
     }
-    *response = mget_data_rows(urls, nurls, headers, 1, timeout, &err);
+    *response = mget_data_rows(url, urls, nurls, headers, 1, timeout, &err);
 # if 0
-    fprintf(stderr, "getDataWithTimeout: after get_data_rows call\n");
+    fprintf(stderr, "muxgetDataWithTimeout: after get_data_rows call\n");
     read_off_memory_status(&stat);
 # endif
     if (err) {
@@ -865,7 +885,7 @@ Dataset muxGetDataWithTimeout(const char *urls[], size_t nurls, const char *uage
     /* Important! Must be zeroed - code relies on it */
     memset(response->dataRecs, 0, response->nrows*sizeof(DataRec *));
 # if 0
-    fprintf(stderr, "getDataWithTimeout: after allocating space for dataRecs array (%d * %d)\n", response->nrows, sizeof(DataRec *));
+    fprintf(stderr, "muxgetDataWithTimeout: after allocating space for dataRecs array (%d * %d)\n", response->nrows, sizeof(DataRec *));
     read_off_memory_status(&stat);
 # endif
 
@@ -874,12 +894,13 @@ Dataset muxGetDataWithTimeout(const char *urls[], size_t nurls, const char *uage
 
 
 /*
- * Low level generic function which returns the whole dataset. Uses default timeout for request
+ * Low level generic function which returns the whole dataset.
  */
 Dataset getData(const char *url, const char *uagent, int *error)
 {
     return getDataWithTimeout(url, uagent, 0, error);
 }
+
 
 int getNtuples(Dataset dataset)
 {
