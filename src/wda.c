@@ -53,8 +53,8 @@ static inline HttpResponse mget_response(const char *url, const char *urls[], si
 typedef struct {
     unsigned long size,resident,share,text,lib,data,dt;
 } statm_t;
-
-
+# endif
+# if 0
 void read_off_memory_status(statm_t *result)
 {
     unsigned long dummy;
@@ -133,9 +133,6 @@ static char *MD5Signature(const char *pwd, const char *salt, const char *args, c
  */
 static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
-# if 0
-    statm_t stat;
-# endif
     size_t realsize = size * nmemb;
     HttpResponse *response = (HttpResponse *)userp;
 
@@ -150,6 +147,7 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     response->size += realsize;
     response->memory[response->size] = 0;
 # if 0
+    statm_t stat;
     fprintf(stderr, "writeMemoryCallback: processed %d bytes\n", realsize);
     read_off_memory_status(&stat);
 # endif
