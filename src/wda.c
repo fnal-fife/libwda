@@ -403,13 +403,23 @@ static HttpResponse get_csv_file(const char *url, int *status)
             /* Get the size of the file. */
             long bufsize = ftell(fp);
             if (bufsize > 0) {
-                /* Allocate our buffer to that size. */
-                response.memory = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
-                if (response.memory == NULL) {
-                    /* out of memory! */
-                    PRINT_ALLOC_ERROR(realloc);
-                    *status = errno;                    // Return status
-                    return response;
+//                /* Allocate our buffer to that size. */
+//                response.memory = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
+//                if (response.memory == NULL) {
+//                    /* out of memory! */
+//                    PRINT_ALLOC_ERROR(realloc);
+//                    *status = errno;                    // Return status
+//                    return response;
+//                }
+                int nb = bufsize / 1638400 + 1;
+                for (i = 1; i <= nb; i++) {             // Artificial loop
+                    response.memory = (char *)realloc(response.memory, sizeof(char) * 1638400*i + 8);
+                    if (response.memory == NULL) {
+                        /* out of memory! */
+                        PRINT_ALLOC_ERROR(realloc);
+                        *status = errno;                    // Return status
+                        return response;
+                    }
                 }
                 /* Go back to the start of the file. */
                 if (fseek(fp, 0L, SEEK_SET) != 0) { /* Error */ }
