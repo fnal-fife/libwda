@@ -136,7 +136,11 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     size_t realsize = size * nmemb;
     HttpResponse *response = (HttpResponse *)userp;
 
-    response->memory = (char *)realloc(response->memory, response->size + realsize + 8);
+    char *tptr = (char *)realloc(response->memory, response->size + realsize + 8);
+    if (tptr!=response->memory) {
+        fprintf(stderr, "#############writeMemoryCallback: response.memory moved...\n");
+    }
+    response->memory = tptr;
     if (response->memory == NULL) {
         /* out of memory! */
         PRINT_ALLOC_ERROR(realloc);
@@ -403,17 +407,25 @@ static HttpResponse get_csv_file(const char *url, int *status)
             /* Get the size of the file. */
             long bufsize = ftell(fp);
             if (bufsize > 0) {
-//                /* Allocate our buffer to that size. */
-//                response.memory = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
+                /* Allocate our buffer to that size. */
+//                char *tptr = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
+//                if (tptr!=response.memory) {
+//                    fprintf(stderr, "response.memory moved\n");
+//                }
+//                response.memory = tptr;
 //                if (response.memory == NULL) {
 //                    /* out of memory! */
 //                    PRINT_ALLOC_ERROR(realloc);
 //                    *status = errno;                    // Return status
 //                    return response;
 //                }
-                int nb = bufsize / 1638400 + 1;
+                int nb = bufsize / 16384 + 1;
                 for (i = 1; i <= nb; i++) {             // Artificial loop
-                    response.memory = (char *)realloc(response.memory, sizeof(char) * 1638400*i + 8);
+                    char *tptr = (char *)realloc(response.memory, sizeof(char) * 16384*i + 8);
+//                    if (tptr!=response.memory) {
+//                        fprintf(stderr, "############# response.memory moved on step %d\n", i);
+//                    }
+                    response.memory = tptr;
                     if (response.memory == NULL) {
                         /* out of memory! */
                         PRINT_ALLOC_ERROR(realloc);
