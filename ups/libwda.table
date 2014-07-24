@@ -11,8 +11,8 @@ Group:
         envPrepend(LIBRARY_PATH,${UPS_PROD_DIR}/lib)
         # make Art framework build happier...
         envSet(LIBWDA_VERSION, ${UPS_PROD_VERSION})
-        envSet(LIBWDA_LIB, ${UPS_PROD_DIR}/lib)
         envSet(LIBWDA_FQ_DIR, ${UPS_PROD_DIR})
+        envSet(LIBWDA_LIB, ${LIBWDA_FQ_DIR}/lib)
 
 End:
 
