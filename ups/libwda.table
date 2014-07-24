@@ -7,12 +7,21 @@ Group:
     ACTION=SETUP
         setupEnv()
         proddir()
-        envPrepend(LD_LIBRARY_PATH,${UPS_PROD_DIR}/lib)
-        envPrepend(LIBRARY_PATH,${UPS_PROD_DIR}/lib)
         # make Art framework build happier...
         envSet(LIBWDA_VERSION, ${UPS_PROD_VERSION})
+        # depending on build type, LIBWDA_FQ_DIR will be either
+        # ${UPS_PROD_DIR} or ${UPS_PROD_DIR}/${UPS_PROD_FLAVOR}
+        # only the line defining LIBWDA_FQ_DIR needs to change
         envSet(LIBWDA_FQ_DIR, ${UPS_PROD_DIR})
+        # use LIBWDA_FQ_DIR
         envSet(LIBWDA_LIB, ${LIBWDA_FQ_DIR}/lib)
+        # add to path (and test for Darwin just in case we ever build there)
+        if ( test `uname` = "Darwin" )
+          envPrepend(DYLD_LIBRARY_PATH, ${LIBWDA_FQ_DIR}/lib)
+        else()
+          envPrepend(LD_LIBRARY_PATH, ${LIBWDA_FQ_DIR}/lib)
+        endif ( test `uname` = "Darwin" )
+        envPrepend(LIBRARY_PATH,${LIBWDA_LIB})
 
 End:
 
