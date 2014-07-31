@@ -20,11 +20,11 @@ all: $(GEN) $(BIN) $(LIB) $(SHLIB) $(TST)
 install:
 	test -d ../lib || mkdir ../lib
 	test -d ../include || mkdir -p ../include
-	cp $(LIB) $(SHLIB) ../lib
+	cp -P $(SHLIB)* ../lib
 	cp $(HDR) ../include
 
 clean:
-	rm -f *.o *.a
+	rm -f *.o *.a $(SHLIB)*
 
 #$(LIB): $(OBJ) $(UTLOBJ)
 #	rm -f $(LIB)
