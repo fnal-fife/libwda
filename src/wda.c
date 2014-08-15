@@ -9,6 +9,7 @@
 #include <openssl/md5.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 
 #include <curl/curl.h>
 
@@ -17,6 +18,8 @@
 
 
 #define DEBUG   0
+#define DEBUG_MALLOC 1
+#define MMAPPED 1
 /*
  * Internal data structures
  */
@@ -49,12 +52,12 @@ static inline HttpResponse mget_response(const char *url, const char *urls[], si
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
             " at %s:%d\n", #a, __FILE__, __LINE__)
 
-# if 0
+# if DEBUG_MALLOC
 typedef struct {
     unsigned long size,resident,share,text,lib,data,dt;
 } statm_t;
 # endif
-# if 0
+# if DEBUG_MALLOC
 void read_off_memory_status(statm_t *result)
 {
     unsigned long dummy;
@@ -63,16 +66,16 @@ void read_off_memory_status(statm_t *result)
     FILE *f = fopen(statm_path,"r");
     if (!f) {
         perror(statm_path);
-        abort();
+        //abort();
     }
     if (7 != fscanf(f,"%ld %ld %ld %ld %ld %ld %ld",
         &result->size,&result->resident,&result->share,&result->text,&result->lib,&result->data,&result->dt))
     {
         perror(statm_path);
-        abort();
+        //abort();
     }
     fclose(f);
-    fprintf(stderr, "********* total=%ldkB, resident=%ldkB, shared=%ldkB, text=%ldkB, (data+stack)=%ldkB *********\n\n",
+    fprintf(stderr, "********* Memory: total=%ldkB, resident=%ldkB, shared=%ldkB, text=%ldkB, (data+stack)=%ldkB *********\n\n",
         result->size*4, result->resident*4, result->share*4, result->text*4, result->data*4);
 }
 # endif
@@ -136,16 +139,28 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     size_t realsize = size * nmemb;
     HttpResponse *response = (HttpResponse *)userp;
 
-    char *tptr = (char *)realloc(response->memory, response->size + realsize + 8);
-    if (tptr!=response->memory) {
-        fprintf(stderr, "#############writeMemoryCallback: response.memory moved...\n");
+//  fprintf(stderr, "writeMemoryCallback: processed %d bytes\n", realsize);
+# if MMAPPED
+    char *tptr = (char *)mremap(response->memory, response->size + 1, response->size + realsize + 1, MREMAP_MAYMOVE);
+    if (tptr == MAP_FAILED) {
+        /* out of memory! */
+        PRINT_ALLOC_ERROR(mremap);
+        return 0;
     }
-    response->memory = tptr;
-    if (response->memory == NULL) {
+# else
+    char *tptr = (char *)realloc(response->memory, response->size + realsize + 8);
+    if (tptr == NULL) {
         /* out of memory! */
         PRINT_ALLOC_ERROR(realloc);
         return 0;
     }
+# endif
+    if (tptr!=response->memory) {
+        fprintf(stderr, "#############writeMemoryCallback: response.memory moved, delta=%ld ", (long)(tptr-response->memory));
+        fprintf(stderr, "response.size=%d(+%d)\n", response->size, realsize);
+        //fprintf(stderr, "#############writeMemoryCallback: response.memory = %p\n", response->memory);
+    }
+    response->memory = tptr;
 
     memcpy(&(response->memory[response->size]), contents, realsize);
     response->size += realsize;
@@ -155,7 +170,6 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
     fprintf(stderr, "writeMemoryCallback: processed %d bytes\n", realsize);
     read_off_memory_status(&stat);
 # endif
-
     return realsize;
 }
 
@@ -408,9 +422,13 @@ static HttpResponse get_csv_file(const char *url, int *status)
             long bufsize = ftell(fp);
             if (bufsize > 0) {
                 /* Allocate our buffer to that size. */
-//                char *tptr = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
-//                if (tptr!=response.memory) {
-//                    fprintf(stderr, "response.memory moved\n");
+//                char *tptr = response.memory;
+//                for (i = 0; i < 1000; i++) {
+//                    tptr = (char *)realloc(tptr, 8);
+//                    tptr = (char *)realloc(tptr, sizeof(char) * (bufsize + 1));
+//                    if (tptr!=response.memory) {
+//                        fprintf(stderr, "############# response.memory moved on step %d, d=%d\n", i, (long)(tptr-response.memory));
+//                    }
 //                }
 //                response.memory = tptr;
 //                if (response.memory == NULL) {
@@ -419,12 +437,13 @@ static HttpResponse get_csv_file(const char *url, int *status)
 //                    *status = errno;                    // Return status
 //                    return response;
 //                }
+
                 int nb = bufsize / 16384 + 1;
                 for (i = 1; i <= nb; i++) {             // Artificial loop
                     char *tptr = (char *)realloc(response.memory, sizeof(char) * 16384*i + 8);
-//                    if (tptr!=response.memory) {
-//                        fprintf(stderr, "############# response.memory moved on step %d\n", i);
-//                    }
+                    if (tptr!=response.memory) {
+                        fprintf(stderr, "############# response.memory moved on step %d, d=%d\n", i, (long)(tptr-response.memory));
+                    }
                     response.memory = tptr;
                     if (response.memory == NULL) {
                         /* out of memory! */
@@ -700,14 +719,31 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
  */
 static int destroyHttpResponse(HttpResponse *response)
 {
+# if DEBUG_MALLOC
+    statm_t stat;
+    fprintf(stderr, "destroyHttpResponse: entered\n");
+    read_off_memory_status(&stat);
+# endif
     if (response!=NULL) {
         if (response->rows!=NULL) {
             free(response->rows);
             response->rows = NULL;
+# if DEBUG_MALLOC
+            fprintf(stderr, "destroyHttpResponse: response->rows destroyed\n");
+            read_off_memory_status(&stat);
+# endif
         }
         if (response->memory!=NULL) {
+# if MMAPPED
+            munmap(response->memory, response->size + 1);
+# else
             free(response->memory);
+# endif
             response->memory = NULL;
+# if DEBUG_MALLOC
+            fprintf(stderr, "destroyHttpResponse: response->memory destroyed\n");
+            read_off_memory_status(&stat);
+# endif
         }
     }
     return 0;
@@ -720,8 +756,22 @@ static int destroyHttpResponse(HttpResponse *response)
  */
 static int initHttpResponse(HttpResponse *response)
 {
+# if MMAPPED
+    response->memory = (char *)mmap(NULL, 1, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+    if (response->memory == MAP_FAILED) {
+        PRINT_ALLOC_ERROR(mmap);
+        response->memory = NULL;
+        return 0;
+    }
+# else
     response->memory = (char *)malloc(1);   /* will be grown as needed by the realloc above */
+    if (response->memory == NULL) {
+        PRINT_ALLOC_ERROR(malloc);
+        response->memory = NULL;
+        return 0;
+    }
     response->memory[0] = '\0';             /* Zero byte                                    */
+# endif
     response->rows = NULL;                  /* no data at this point                        */
     response->nrows = response->size = 0;   /* no data at this point                        */
     response->http_code = 0;
@@ -1017,7 +1067,7 @@ double getDoubleValue(Tuple tuple, int position, int *error)
 
 int getStringValue(Tuple tuple, int position, char *buffer, int buffer_size, int *error)
 {
-	char *cp;
+    char *cp;
     DataRec *dataRec = (DataRec *)tuple;
     if (position < 0 || position >= dataRec->ncolumns) {
         *error = EINVAL;
@@ -1027,9 +1077,9 @@ int getStringValue(Tuple tuple, int position, char *buffer, int buffer_size, int
     *error = 0;
     if (dataRec->columns[position] > 0) {
         cp = memccpy(buffer, dataRec->columns[position], 0, buffer_size-1);
-        if (cp==NULL) {						// There was no enough space in the destination buffer
-            buffer[buffer_size-1] = '\0';	// Terminate the string
-		    *error = EINVAL;
+        if (cp==NULL) {                         // There was no enough space in the destination buffer
+            buffer[buffer_size-1] = '\0';       // Terminate the string
+            *error = EINVAL;
         }
         return strlen(buffer);
     }
@@ -1103,6 +1153,11 @@ int releaseDataset(Dataset dataset)
     if (response == NULL)
         return 0;
     /* First, release all stored dataRecs   */
+# if DEBUG_MALLOC
+    statm_t stat;
+    fprintf(stderr, "releaseDataset: entered\n");
+    read_off_memory_status(&stat);
+# endif
     for (i = 0; i < response->nrows; i++) {
         if (response->dataRecs[i] > 0) {
 # if DEBUG
@@ -1112,12 +1167,20 @@ int releaseDataset(Dataset dataset)
             response->dataRecs[i] = NULL;
         }
     }
+# if DEBUG_MALLOC
+    fprintf(stderr, "releaseDataset: response->dataRecs[0:%d] destroyed\n", response->nrows);
+    read_off_memory_status(&stat);
+# endif
     /* Second, release dataset itself       */
 # if DEBUG
     fprintf(stderr, "releaseDataset: about to free %p\n", dataset);
 # endif
     destroyHttpResponse((HttpResponse *)dataset);
     free(dataset);
+# if DEBUG_MALLOC
+    fprintf(stderr, "releaseDataset: response data destroyed\n");
+    read_off_memory_status(&stat);
+# endif
     return 0;
 }
 
