@@ -35,6 +35,7 @@ typedef struct {
 typedef struct {
     char *memory;       // The buffer from HTTP response
     size_t size;        // The size of the buffer (in bytes)
+    size_t allocsize;   // The allocated size of the buffer (in bytes)
     char **rows;        // Array of rows in the buffer
     size_t nrows;       // Number of rows
     size_t idx;         // Current index
@@ -141,11 +142,22 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
 
 //  fprintf(stderr, "writeMemoryCallback: processed %d bytes\n", realsize);
 # if MMAPPED
-    char *tptr = (char *)mremap(response->memory, response->size + 1, response->size + realsize + 1, MREMAP_MAYMOVE);
-    if (tptr == MAP_FAILED) {
-        /* out of memory! */
-        PRINT_ALLOC_ERROR(mremap);
-        return 0;
+    size_t newalloc;
+    int needalloc;
+    size_t newsize = response->size + realsize;
+    char *tptr = response->memory;
+    for (needalloc = 0, newalloc = response->allocsize; newalloc <= newsize; newalloc *= 2) {
+        needalloc = 1;
+    }
+    if (needalloc) {
+        fprintf(stderr, "allocate=%d, need %d\n", newalloc, newsize);
+        tptr = (char *)mremap(response->memory, response->allocsize, newalloc, MREMAP_MAYMOVE);
+        if (tptr == MAP_FAILED) {
+            /* out of memory! */
+            PRINT_ALLOC_ERROR(mremap);
+            return 0;
+        }
+        response->allocsize = newalloc;
     }
 # else
     char *tptr = (char *)realloc(response->memory, response->size + realsize + 8);
@@ -155,16 +167,18 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
         return 0;
     }
 # endif
+# if DEBUG_MALLOC
     if (tptr!=response->memory) {
         fprintf(stderr, "#############writeMemoryCallback: response.memory moved, delta=%ld ", (long)(tptr-response->memory));
         fprintf(stderr, "response.size=%d(+%d)\n", response->size, realsize);
         //fprintf(stderr, "#############writeMemoryCallback: response.memory = %p\n", response->memory);
     }
+# endif    
     response->memory = tptr;
 
     memcpy(&(response->memory[response->size]), contents, realsize);
     response->size += realsize;
-    response->memory[response->size] = 0;
+    response->memory[response->size] = '\0';
 # if 0
     statm_t stat;
     fprintf(stderr, "writeMemoryCallback: processed %d bytes\n", realsize);
@@ -735,7 +749,7 @@ static int destroyHttpResponse(HttpResponse *response)
         }
         if (response->memory!=NULL) {
 # if MMAPPED
-            munmap(response->memory, response->size + 1);
+            munmap(response->memory, response->allocsize);
 # else
             free(response->memory);
 # endif
@@ -756,20 +770,23 @@ static int destroyHttpResponse(HttpResponse *response)
  */
 static int initHttpResponse(HttpResponse *response)
 {
+    const size_t MIN_SIZE = 1024*1024;
 # if MMAPPED
-    response->memory = (char *)mmap(NULL, 1, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+    response->memory = (char *)mmap(NULL, MIN_SIZE, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
     if (response->memory == MAP_FAILED) {
         PRINT_ALLOC_ERROR(mmap);
         response->memory = NULL;
         return 0;
     }
+    response->allocsize = MIN_SIZE;
 # else
-    response->memory = (char *)malloc(1);   /* will be grown as needed by the realloc above */
+    response->memory = (char *)malloc(1);   /* will be grown as needed by the realloc       */
     if (response->memory == NULL) {
         PRINT_ALLOC_ERROR(malloc);
         response->memory = NULL;
         return 0;
     }
+    response->allocsize = 1;
     response->memory[0] = '\0';             /* Zero byte                                    */
 # endif
     response->rows = NULL;                  /* no data at this point                        */
