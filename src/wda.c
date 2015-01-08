@@ -17,7 +17,7 @@
 #include "wda.h"
 
 
-#define DEBUG   0
+#define DEBUG   1
 #define DEBUG_MALLOC 0
 #define USE_MMAPPED 1
 /*
@@ -297,16 +297,16 @@ static HttpResponse get_http_response(const char *url, const char *headers[], si
 }
 # endif
 
-
 /*
  * Internal common function
- * Main finction, does all work using libcurl.
- * If 'url' argument is present uses it as a primary source.
- * If 'urls' argument is present uses it as a backup sources with the first randomly selected and then goes round robin.
  */
-static HttpResponse mget_http_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+ 
+
+# if 1
+//static HttpResponse mget_http_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders,                                   int timeout,   int *status)
+//void postHTTP                         (const char *url,                                   const char *headers[], size_t nheaders, const char *data, size_t length,/*int timeout,*/ int *status)
+static HttpResponse perform_with_timeout(CURL *curl_handle, const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
 {
-    CURL *curl_handle;
     CURLcode ret = CURLE_FAILED_INIT;
 
     HttpResponse response;
@@ -332,22 +332,94 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
         aurl = url;                 // Primary URL is present so start with it
     }
 
-    curl_global_init(CURL_GLOBAL_ALL);
+    struct curl_slist *headerlist = NULL;
+    char user_agent[256];
+    snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
+    if (headers) {					// Add extra headers if present
+        for (i = 0; i < nheaders; i++) {
+            if (headers[i])
+                headerlist = curl_slist_append(headerlist, headers[i]);
+        }
+    }
+    headerlist = curl_slist_append(headerlist, user_agent);
 
-    /* init the curl session */
-    curl_handle = curl_easy_init();
+    // Set HTTP version
+    curl_easy_setopt(curl_handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+	// Set extra headers
+    curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);
 
-    if (curl_handle) {
-        struct curl_slist *headerlist = NULL;
-        char user_agent[256];
-        snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
-        if (headers) {
-            for (i = 0; i < nheaders; i++) {
-                if (headers[i])
-                    headerlist = curl_slist_append(headerlist, headers[i]);
+    k = 0;
+    do {
+        fprintf(stderr, "%s: URL index=%d\n", __func__, iurl);	// DEBUG
+        destroyHttpResponse(&response);
+        initHttpResponse(&response);
+            
+        // Specify the URL for request
+        curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
+            
+        ret = curl_easy_perform(curl_handle);
+            
+        *status = ret;
+        if (ret != CURLE_OK) {	// Check for errors
+            fprintf(stderr, "%s: curl_easy_perform() failed: %s\n", __func__, curl_easy_strerror(ret));
+            response.size = 0;
+            response.http_code = 0;
+        } else {
+            curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response.http_code);
+            if (response.http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
+                //Succeeded
+                fprintf(stderr, "%s: HTTP status code=%d: '%s'\n", __func__, response.http_code, response.memory);	// DEBUG
+                break;
+            } else {
+                //Failed
+# if DEBUG
+                fprintf(stderr, "%s: HTTP status code=%d: '%s'\n", __func__, response.http_code, response.memory);
+# endif
             }
         }
-        headerlist = curl_slist_append(headerlist, user_agent);
+        int dt = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
+        sleep(dt);
+        t1 = time(NULL);
+
+        if (nurls > 0) {
+            iurl = ++iurl % nurls;          // Go to next URL in a loop
+            aurl = urls[iurl];
+        }
+# if DEBUG
+        fprintf(stderr, "%s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", __func__, ret, k, dt, t0, t1, timeout);
+# endif
+    } while ((t1 - t0) < timeout);
+
+    curl_slist_free_all(headerlist); 		// Free the custom headers
+    return response;                        // Return response structure
+}
+# endif
+
+/*
+ * Internal common function
+ * Main finction, does all work using libcurl.
+ * If 'url' argument is present uses it as a primary source.
+ * If 'urls' argument is present uses it as a backup sources with the first randomly selected and then goes round robin.
+ */
+static HttpResponse mget_http_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status)
+{
+    CURL *curl_handle;
+    CURLcode ret = CURLE_FAILED_INIT;
+
+    HttpResponse response;
+
+    initHttpResponse(&response);
+
+    ret = curl_global_init(CURL_GLOBAL_ALL);
+
+    if (ret != CURLE_OK) {			// Check for errors
+	    curl_global_cleanup();
+    	*status = ret;              // Return status
+	    return response;            // Return response structure
+    }
+    // init the curl session
+    curl_handle = curl_easy_init();
+    if (curl_handle) {
 
         /* send all data to this function  */
         curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, writeMemoryCallback);
@@ -358,60 +430,18 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
         /* Enable redirection */
         curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1);
 
-        ret = curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);    /* Set extra headers            */
-
-        k = 0;
-        do {
-# if 0
-            fprintf(stderr, "mget_http_response: URL index=%d\n", iurl);
-# endif
-            /* specify URL to get */
-            curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
-            /* get it! */
-            destroyHttpResponse(&response);
-            initHttpResponse(&response);
-            ret = curl_easy_perform(curl_handle);
-            *status = ret;
-            if (ret != CURLE_OK) {                                              /* Check for errors             */
-                fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(ret));
-                response.size = 0;
-                response.http_code = 0;
-            } else {
-                    curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response.http_code);
-                if (response.http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
-                    //Succeeded
-                    break;
-                } else {
-                    //Failed
-# if DEBUG
-                    fprintf(stderr, "HTTP status code=%d: '%s'\n", response.http_code, response.memory);
-# endif
-                }
-            }
-            int d = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
-            sleep(d);
-            t1 = time(NULL);
-
-            if (nurls > 0) {
-                iurl = ++iurl % nurls;          // Go to next URL in a loop
-                aurl = urls[iurl];
-            }
-# if DEBUG
-            fprintf(stderr, "ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", ret, k, d, t0, t1, timeout);
-# endif
-        } while ((t1 - t0) < timeout);
-
-        /* cleanup curl stuff */
+		//response = perform_with_timeout(curl_handle, url, urls, nurls, headers, nheaders, timeout, status);
+		perform_with_timeout(curl_handle, url, urls, nurls, headers, nheaders, timeout, status);
+		
+        // Cleanup curl stuff
         curl_easy_cleanup(curl_handle);
-        curl_slist_free_all(headerlist);                                        /* Free the custom headers      */
 # if DEBUG
         fprintf(stderr, "mget_http_response: %lu bytes retrieved\n", (long)response.size);
 # endif
     }
-    /* we're done with libcurl, so clean it up */
+    // we're done with libcurl, so clean it up
     curl_global_cleanup();
 
-    *status = ret;                          // Return status
     return response;                        // Return response structure
 }
 
