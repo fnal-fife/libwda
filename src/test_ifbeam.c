@@ -65,10 +65,10 @@ int main(void)
     ds = getBundleForInterval(url, "NuMI_Physics_A9", t0-320, t0-300, &error);     // Get the data for bundle
      
     
-    if (error) {																// Check for curl library errors
+    if (error) {                                            // Check for curl library errors
 	    fprintf(stderr, "main(): error code=%d(0x%x)\n", error, error);    perror("error message");
 	}
-	if (getHTTPstatus(ds) != 200) {												// Check for HTTP error
+    if (getHTTPstatus(ds) != 200) {                         // Check for HTTP error
 	    fprintf(stderr, "main(): HTTP code=%ld, message: '%s'\n", getHTTPstatus(ds), getHTTPmessage(ds));
 	}
 
