@@ -207,7 +207,7 @@ void *getHTTP(const char *url, const char *headers[], size_t nheaders, size_t *l
 
 
 /*
- * Internal common function
+ * Internal helper
  */
 
 static struct curl_slist *add_headers(const char *headers[], size_t nheaders)
@@ -226,8 +226,12 @@ static struct curl_slist *add_headers(const char *headers[], size_t nheaders)
     return headerlist;
 }
 
-//static HttpResponse mget_http_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders,                                   int timeout,   int *status)
-//void postHTTP                         (const char *url,                                   const char *headers[], size_t nheaders, const char *data, size_t length,/*int timeout,*/ int *status)
+/*
+ * Internal common function. Calls curl_easy_perform() with the parameters set in the caller.
+ * Does mutiple retries if timeout provided in the arguments. 
+ * Does round-robin selection from the URL list if provided.
+ * Now is used for GETs and POSTs
+ */
 static CURLcode perform_with_timeout(CURL *curl_handle,
             HttpResponse *response,
             const char *url, const char *urls[], size_t nurls,
