@@ -19,7 +19,12 @@
 
 #define DEBUG   0
 #define DEBUG_MALLOC 0
+
+# if defined(__linux__)
 #define USE_MMAPPED 1
+# else
+#define USE_MMAPPED 0
+# endif
 /*
  * Internal data structures
  */
@@ -496,8 +501,8 @@ void postHTTPsigned_retry(const char *url, const char* password, const char *hea
 
     postHTTP_retry(url, hdrs, nheaders+2, data, length, timeout, status);  // Post the data with additional headers
 
-    free(hdrs[--i]);                                                // Free allocated memory
-    free(hdrs[--i]);                                                // Free allocated memory
+    free((void *)(hdrs[--i]));                                      // Free allocated memory
+    free((void *)(hdrs[--i]));                                      // Free allocated memory
     free(hdrs);                                                     // Free allocated memory
 }
 
@@ -596,7 +601,7 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
 
     /* Now break response to the rows */
     running = response.memory;                                  // Start from the beginning of the response buffer
-    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+    for (k = 0; (row = strsep(&running, "\n")); k++) {          // Walk through, find all newlines, replace them with '\0'
         //fprintf(stderr, "t = '%s'\n", row);
         //fprintf(stderr, "running = '%lx'\n", running);
         response.rows[k] = row;                                 // Store pointer to the line
@@ -647,7 +652,7 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
 
     /* Now break response to the rows */
     running = response.memory;                                  // Start from the beginning of the response buffer
-    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+    for (k = 0; (row = strsep(&running, "\n")); k++) {          // Walk through, find all newlines, replace them with '\0'
         //fprintf(stderr, "t = '%s'\n", row);
         //fprintf(stderr, "running = '%lx'\n", running);
         response.rows[k] = row;                                 // Store pointer to the line
@@ -706,7 +711,7 @@ static int initHttpResponse(HttpResponse *response)
     if (response->memory == MAP_FAILED) {
         PRINT_ALLOC_ERROR(mmap);
         response->memory = NULL;
-        return 0;
+        return -1;
     }
     response->allocsize = MIN_SIZE;
 # else
@@ -714,7 +719,7 @@ static int initHttpResponse(HttpResponse *response)
     if (response->memory == NULL) {
         PRINT_ALLOC_ERROR(malloc);
         response->memory = NULL;
-        return 0;
+        return -1;
     }
     response->allocsize = MIN_SIZE;
     response->memory[0] = '\0';             /* Zero byte                                    */
@@ -722,6 +727,7 @@ static int initHttpResponse(HttpResponse *response)
     response->rows = NULL;                  /* no data at this point                        */
     response->nrows = response->size = 0;   /* no data at this point                        */
     response->http_code = 0;
+    return 0;
 }
 
 
