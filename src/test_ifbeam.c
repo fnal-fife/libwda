@@ -14,7 +14,8 @@ typedef struct {
     unsigned long size,resident,share,text,lib,data,dt;
 } statm_t;
 
-#if 1
+# if defined(__linux__)
+
 void read_off_memory_status(statm_t *result)
 {
     unsigned long dummy;
@@ -35,16 +36,23 @@ void read_off_memory_status(statm_t *result)
     fprintf(stderr, "********* total=%ldkB, resident=%ldkB, shared=%ldkB, text=%ldkB, (data+stack)=%ldkB *********\n\n",
         result->size*4, result->resident*4, result->share*4, result->text*4, result->data*4);
 }
+
+# define READ_OFF_MEMORY_STATUS(a) read_off_memory_status(a)
+
+# else
+
+# define READ_OFF_MEMORY_STATUS(a)
+
 # endif
 
 
 int main(void) 
 {
     int i, j, k;
-    int err;
+    int err = -1234;
     statm_t stat;
 
-//    const char *url = "http://dbdata0.fnal.gov:8099/ifbeam/data";
+//    const char *url = "http://dbdata0vm.fnal.gov:8099/ifbeam/data";
     const char *url = "http://dbweb4.fnal.gov:8088/ifbeam/data";
 
 
@@ -78,11 +86,11 @@ int main(void)
 # if 0
 //    for (i = 0; i < getNtuples(ds); i++) {
     for (i = 0; i < 15; i++) {
-		tu = getTuple(ds, i);   	                          	// Returns NULL if out of range
+		tu = getTuple(ds, i);   	                        // Returns NULL if out of range
 		len = getStringValue(tu, 0, ss, sizeof (ss), &err);   	// Returns string length
-        fprintf(stderr, "[%d]: l=%d, s='%s'", i, len, ss);  	// Print the results
+        fprintf(stderr, "[%d]: l=%d, s='%s'", i, len, ss);  	        // Print the results
 		len = getStringValue(tu, 1, ss, sizeof (ss), &err);   	// Returns string length
-        fprintf(stderr, " s='%s'\n", ss);  						// Print the results
+        fprintf(stderr, " s='%s'\n", ss);  				// Print the results
 	}   
 # endif   
 //==============================================    
@@ -99,6 +107,7 @@ int main(void)
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
             fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
         }
+        fprintf(stderr, "err=%d\n", err);
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
     } 
 
@@ -129,7 +138,7 @@ int main(void)
 //==============================================    
     
     fprintf(stderr, "#######The 5-th tuple, should be array...\n");
-    tu = getTuple(ds, 5);                              				// Get the row with double array 
+    tu = getTuple(ds, 5);                              		    // Get the row with double array 
 
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
@@ -173,10 +182,10 @@ int main(void)
 		fprintf(stderr, "clock=%ld\n", me->clock);
 		fprintf(stderr, "device='%s'\n", me->device);
 		fprintf(stderr, "units='%s'\n", me->units);
-		fprintf(stderr, "vector_size=%d\n", me->vector_size);
+		fprintf(stderr, "vector_size=%zu\n", me->vector_size);
 		if (me->vector_size > 0) {
 			len = me->vector_size;
-	        for (i = 0; i < len; i++) {                                 // Print the results
+	        for (i = 0; i < len; i++) {                           // Print the results
     	        fprintf(stderr, "%f, ", dd[i]);
         	}
 	        fprintf(stderr, "\n\n");
@@ -194,12 +203,12 @@ int main(void)
 # endif    
 
     //
-    read_off_memory_status(&stat);
+    READ_OFF_MEMORY_STATUS(&stat);
     //
     fprintf(stderr, "#######Release dataset...\n");
     releaseDataset(ds);                                             // Release dataset to prevent memory leak!
     //
-    read_off_memory_status(&stat);
+    READ_OFF_MEMORY_STATUS(&stat);
     //
 
 
@@ -248,12 +257,12 @@ int main(void)
 
     
     //
-    read_off_memory_status(&stat);
+    READ_OFF_MEMORY_STATUS(&stat);
     //
     fprintf(stderr, "#######Release dataset...\n");
     releaseDataset(ds);                                             // Release dataset to prevent memory leak!
     //
-    read_off_memory_status(&stat);
+    READ_OFF_MEMORY_STATUS(&stat);
     //
 # endif    
     
