@@ -637,7 +637,7 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
           k++;
     }
 # if DEBUG
-    fprintf(stderr, "mget_data_rows: %d lines retrieved\n", k);
+    fprintf(stderr, "%s: %d lines retrieved\n", __func__, k);
 # endif
     /* Allocate memory for array of rows */
 //  response.rows = (char **)malloc(sizeof(char *) * k + 8);
@@ -781,7 +781,9 @@ static DataRec *parse_csv_row(const char *s)
             if (inquotes) continue;
             if (*sp==',') ncol++;
         }
-        //fprintf(stderr, "parse_csv: n=%d\n", ncol);
+# if DEBUG
+        fprintf(stderr, "%s: ncol=%d\n", __func__, ncol);
+#endif
         dataRec->ncolumns = ++ncol;                                 // Store the number of columns
 
 //      size_t csize = sizeof(char *) * dataRec->ncolumns;          // Allocated memory size
@@ -802,6 +804,9 @@ static DataRec *parse_csv_row(const char *s)
             if (*sp==',' || *sp=='\0') {
                 dataRec->columns[ncol++] = cp;                      // Store the pointer to the name
                 *sp = '\0';
+# if DEBUG
+                fprintf(stderr, "%s: col='%s'\n", __func__, cp);
+#endif
                 cp = sp + 1;
             }
         }
@@ -1056,14 +1061,15 @@ int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, i
     sptr = dataRec->columns[position];              // Start from the beginning of array
     if (strncmp(sptr, "\"[", 2)==0)
         sptr += 2;                                  // Skip double quote and square bracket
-    for (len = i = 0; i < buffer_size; i++) {
+    for (len = i = 0; i < dataRec->ncolumns-position && i < buffer_size; i++) {
         val = strtod(sptr, &eptr);                  // Try to convert
-# if DEBUG
-        fprintf(stderr, "s='%s' ", sptr);
-        fprintf(stderr, "[%d]=%f\n", i, val);
-# endif
         if (sptr==eptr) break;                      // End the loop if no coversion was performed
         if (*sptr=='\0') break;                     // End the loop if buffer ends
+        if (errno) break;                           // Error in decoding
+# if DEBUG
+        fprintf(stderr, "%s: decoded '%s' ", __func__, sptr);
+        fprintf(stderr, "[%d]<-%f\n", i, val);
+# endif
         buffer[len++] = val;                        // Store converted value, increase the length
         sptr = eptr + 1;                            // Shift the pointer to the next number
     }

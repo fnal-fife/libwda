@@ -1,4 +1,4 @@
-//#define _GNU_SOURCE 
+//#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <string.h>
@@ -46,7 +46,7 @@ void read_off_memory_status(statm_t *result)
 # endif
 
 
-int main(void) 
+int main(void)
 {
     int i, j, k;
     int err = -1234;
@@ -59,21 +59,21 @@ int main(void)
     Dataset ds;
     Tuple tu;
     Measurement me;
-    
+
     int len;
     int error;
     char ss[81920];
     double dd[8192];
-    
+
     setUserAgent("Test_ifbeam_1");                    // Set User-Agent header for HTTP request
-    
+
     time_t t0 = time(NULL);
 //    ds = getBundleForInterval(url, "BNBShortTerm", t0-305, t0-300, &error);     // Get the data for bundle
 //    ds = getBundleForInterval(url, "Weather", t0-500, t0-300, &error);
     ds = getBundleForInterval(url, "NuMI_Physics_A9", t0-320, t0-300, &error);
 //    ds = getBundleForInterval(url, "NuMI_Physics_1Hz", t0-320, t0-300, &error);
-     
-    
+
+
     if (error) {                                            // Check for curl library errors
         fprintf(stderr, "main(): error code=%d(0x%x)\n", error, error);    perror("error message");
     }
@@ -92,10 +92,10 @@ int main(void)
         fprintf(stderr, "[%d]: l=%d, s='%s'", i, len, ss);        // Print the results
         len = getStringValue(tu, 1, ss, sizeof (ss), &err);       // Returns string length
         fprintf(stderr, " s='%s'\n", ss);                         // Print the results
-    }   
-# endif   
-//==============================================    
-    
+    }
+# endif
+//==============================================
+
     fprintf(stderr, "#######The first tuple...\n");
 //  tu = getTuple(ds, 1);                               // Returns NULL if out of range
     tu = getFirstTuple(ds);                             // Get the very first row - contains the column names
@@ -103,18 +103,18 @@ int main(void)
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
         fprintf(stderr, "ncols=%d\n", nc);
-        
+
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
             fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
         }
         fprintf(stderr, "err=%d\n", err);
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
-    } 
+    }
 
 
 
-//==============================================    
+//==============================================
 
     fprintf(stderr, "#######The next tuple...\n");
     tu = getNextTuple(ds);                              // Get the next row, it contains the first data value in the dataset
@@ -122,7 +122,7 @@ int main(void)
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
         fprintf(stderr, "ncols=%d\n", nc);
-        
+
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
             fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
@@ -133,13 +133,13 @@ int main(void)
     } else {
         fprintf(stderr, "No such tuple"); perror("...");
     }
-    
-    
-    
-//==============================================    
-    
+
+
+
+//==============================================
+
     fprintf(stderr, "#######The 5-th tuple, should be array...\n");
-    tu = getTuple(ds, 5);                                           // Get the row with double array 
+    tu = getTuple(ds, 5);                                           // Get the row with double array
 
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
@@ -148,13 +148,13 @@ int main(void)
             fprintf(stderr, "[%d]: l=%d, s='%.25s'\n", i, len, ss); // Print the results
         }
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
-        
+
         len = getStringValue(tu, 1, ss, sizeof (ss), &err);
-        fprintf(stderr, "name='%s'\n", ss); 
+        fprintf(stderr, "name='%s'\n", ss);
         fprintf(stderr, "ncols=%d\n", nc);
-        
+
         // Get the first double
-        // Now extract the double value from the 3-rd column 
+        // Now extract the double value from the 3-rd column
         fprintf(stderr, "[3]: fval=%f\n", getDoubleValue(tu, 3, &err));
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
 
@@ -166,7 +166,7 @@ int main(void)
             fprintf(stderr, "%f, ", dd[i]);
         }
         fprintf(stderr, "\n");
-        
+
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
     } else {
         fprintf(stderr, "No such tuple"); perror("...");
@@ -174,11 +174,11 @@ int main(void)
 
 
 
-//==============================================    
+//==============================================
 # if 1
     fprintf(stderr, "#######The first Measurement...\n");
     me = getMeasurement(ds, 1);
-    
+
     if (me != NULL) {
         fprintf(stderr, "clock=%ld\n", me->clock);
         fprintf(stderr, "device='%s'\n", me->device);
@@ -186,8 +186,9 @@ int main(void)
         fprintf(stderr, "vector_size=%zu\n", me->vector_size);
         if (me->vector_size > 0) {
             len = me->vector_size;
+            fprintf(stderr, "********* vec=%p\n", me->vector);  // debug
             for (i = 0; i < len; i++) {                             // Print the results
-                fprintf(stderr, "%f, ", dd[i]);
+                fprintf(stderr, "%f, ", (me->vector)[i]);
             }
             fprintf(stderr, "\n\n");
         } else if (me->vector_size == 0) {
@@ -200,8 +201,8 @@ int main(void)
         fprintf(stderr, "No such measurement\n");
         perror("No such measurement");
     }
-    
-# endif    
+
+# endif
 
     //
     READ_OFF_MEMORY_STATUS(&stat);
@@ -215,35 +216,71 @@ int main(void)
 
 
 # if 1
-//==============================================    
-
+//==============================================
     fprintf(stderr, "\n\n\n#######Event for interval...\n");
+//  ds = getEventVarForInterval(url, "e,8f", "E:HMGPR", 1423851431.000, 1423851436.000, &error);     // Get the data for the variable in event
     ds = getEventVarForInterval(url, "e,8f", "E:HMGPR", t0-305, t0-300, &error);     // Get the data for the variable in event
 //  ds = getEventVarForTime    (url, "e,8f", "E:HMGPR", t0-305,         &error);     // Get the data for the variable in event
     fprintf(stderr, "\nntuples=%d\n\n", getNtuples(ds));    // Get the number of rows in the dataset
 
     tu = getFirstTuple(ds);                                 // Get the very first row - contains the column names
+    tu = getNextTuple(ds);                                  // Get the first data row
     // If we get the names print them
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
         fprintf(stderr, "ncols=%d\n", nc);
-        
+
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
             fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
         }
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
-    } 
+    }
+        // Get double array
+        len = getDoubleArray(tu, 4, dd, 4096, &err);                // Now extract the double array from the 3-rd column
+        fprintf(stderr, "Array len=%d\n", len);                     // Print the length
+
+        for (i = 0; i < len; i++) {                                 // Print the results
+            fprintf(stderr, "%f, ", dd[i]);
+        }
+        fprintf(stderr, "\n\n");
+# if 1
+    fprintf(stderr, "#######The first Measurement...\n");
+    me = getMeasurement(ds, 1);
+
+    if (me != NULL) {
+        fprintf(stderr, "clock=%ld\n", me->clock);
+        fprintf(stderr, "device='%s'\n", me->device);
+        fprintf(stderr, "units='%s'\n", me->units);
+        fprintf(stderr, "vector_size=%zu\n", me->vector_size);
+        if (me->vector_size > 0) {
+            len = me->vector_size;
+            fprintf(stderr, "********* vec=%p\n", me->vector);  // debug
+            for (i = 0; i < len; i++) {                             // Print the results
+                fprintf(stderr, "%f, ", me->vector[i]);
+            }
+            fprintf(stderr, "\n\n");
+        } else if (me->vector_size == 0) {
+            fprintf(stderr, "value=%f\n\n", me->value);
+        } else {
+            fprintf(stderr, "Something is wrong with the measurement\n");
+            perror("Something is wrong with the measurement");
+        }
+    } else {
+        fprintf(stderr, "No such measurement\n");
+        perror("No such measurement");
+    }
+# endif
 
 
-//==============================================    
+//==============================================
 
     tu = getNextTuple(ds);                              // Get the next row, it contains the first data value in the dataset
 
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
         fprintf(stderr, "ncols=%d\n", nc);
-        
+
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
             fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
@@ -254,9 +291,9 @@ int main(void)
     } else {
         fprintf(stderr, "No such tuple"); perror("...");
     }
-    
 
-    
+
+
     //
     READ_OFF_MEMORY_STATUS(&stat);
     //
@@ -265,8 +302,8 @@ int main(void)
     //
     READ_OFF_MEMORY_STATUS(&stat);
     //
-# endif    
-    
+# endif
+
     return 0;
 }
 
