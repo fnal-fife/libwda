@@ -63,7 +63,7 @@ $(SHLIB): $(OBJ) $(UTLOBJ)
 endif
 
 wda_version.h: FORCE
-	test -d .git && echo '#define WDA_VERSION "'`git describe --tags --match 'wda*'`'"' > $@.new && mv $@.new $@ || true
+	test -d ../.git && echo '#define WDA_VERSION "'`git describe --tags --match 'wda*'`'"' > $@.new && mv $@.new $@ || true
 
 FORCE:
 
