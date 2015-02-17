@@ -15,27 +15,19 @@
 #include "wda_version.h"
 #include "wda.h"
 
-
 #define DEBUG   0
 #define DEBUG_MALLOC 0
 
+
 # if defined(__linux__)
 #   define USE_MMAPPED 1
-
 #   include <openssl/md5.h>
-#   define MD5_CTX_T            MD5_CTX
-#   define MD5_INIT(a)          MD5_Init((a))
-#   define MD5_UPDATE(a,b,c)    MD5_Update((a), (b), (c))
-#   define MD5_FINAL(a,b)       MD5_Final((a), (b))
+# endif
 
-# else
+# if defined(__APPLE__)
 #   define USE_MMAPPED 0
-
+#   define COMMON_DIGEST_FOR_OPENSSL 1
 #   include <CommonCrypto/CommonDigest.h>
-#   define MD5_CTX_T            CC_MD5_CTX
-#   define MD5_INIT(a)          CC_MD5_Init((a))
-#   define MD5_UPDATE(a,b,c)    CC_MD5_Update((a), (b), (c))
-#   define MD5_FINAL(a,b)       CC_MD5_Final((a), (b))
 # endif
 /*
  * Internal data structures
@@ -126,19 +118,19 @@ static char *randStr(char *dst, int size)
 static char *MD5Signature(const char *pwd, const char *salt, const char *args, const char *buf, size_t length)
 {
     int n;
-    MD5_CTX_T c;
+    MD5_CTX c;
     unsigned char digest[16];
     static char out[34];
 
-    MD5_INIT(&c);
+    MD5_Init(&c);
 
-    MD5_UPDATE(&c, pwd, strlen(pwd));
-    MD5_UPDATE(&c, salt, strlen(salt));
+    MD5_Update(&c, pwd, strlen(pwd));
+    MD5_Update(&c, salt, strlen(salt));
     if (args)
-        MD5_UPDATE(&c, args, strlen(args));
-    MD5_UPDATE(&c, buf, length);
+        MD5_Update(&c, args, strlen(args));
+    MD5_Update(&c, buf, length);
 
-    MD5_FINAL(digest, &c);
+    MD5_Final(digest, &c);
 
     for (n = 0; n < 16; n++) {
         snprintf(&(out[n*2]), 16*2, "%02x", (unsigned int)digest[n]);
@@ -245,7 +237,7 @@ static struct curl_slist *add_headers(const char *headers[], size_t nheaders)
 
 /*
  * Internal common function. Calls curl_easy_perform() with the parameters set in the caller.
- * Does mutiple retries if timeout provided in the arguments. 
+ * Does mutiple retries if timeout provided in the arguments.
  * Does round-robin selection from the URL list if provided.
  * Now is used for GETs and POSTs
  */
@@ -318,7 +310,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
         t1 = time(NULL);
 
         if (urls!=NULL && nurls > 0) {    // Go to next URL in a loop
-            iurl = ((iurl < 0) ? random() : iurl+1) % nurls;    
+            iurl = ((iurl < 0) ? random() : iurl+1) % nurls;
             aurl = urls[iurl];
         }
 # if DEBUG
