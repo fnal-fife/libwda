@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <errno.h>
-#include <openssl/md5.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -21,9 +20,22 @@
 #define DEBUG_MALLOC 0
 
 # if defined(__linux__)
-#define USE_MMAPPED 1
+#   define USE_MMAPPED 1
+
+#   include <openssl/md5.h>
+#   define MD5_CTX_T            MD5_CTX
+#   define MD5_INIT(a)          MD5_Init((a))
+#   define MD5_UPDATE(a,b,c)    MD5_Update((a), (b), (c))
+#   define MD5_FINAL(a,b)       MD5_Final((a), (b))
+
 # else
-#define USE_MMAPPED 0
+#   define USE_MMAPPED 0
+
+#   include <CommonCrypto/CommonDigest.h>
+#   define MD5_CTX_T            CC_MD5_CTX
+#   define MD5_INIT(a)          CC_MD5_Init((a))
+#   define MD5_UPDATE(a,b,c)    CC_MD5_Update((a), (b), (c))
+#   define MD5_FINAL(a,b)       CC_MD5_Final((a), (b))
 # endif
 /*
  * Internal data structures
@@ -114,19 +126,19 @@ static char *randStr(char *dst, int size)
 static char *MD5Signature(const char *pwd, const char *salt, const char *args, const char *buf, size_t length)
 {
     int n;
-    MD5_CTX c;
+    MD5_CTX_T c;
     unsigned char digest[16];
     static char out[34];
 
-    MD5_Init(&c);
+    MD5_INIT(&c);
 
-    MD5_Update(&c, pwd, strlen(pwd));
-    MD5_Update(&c, salt, strlen(salt));
+    MD5_UPDATE(&c, pwd, strlen(pwd));
+    MD5_UPDATE(&c, salt, strlen(salt));
     if (args)
-        MD5_Update(&c, args, strlen(args));
-    MD5_Update(&c, buf, length);
+        MD5_UPDATE(&c, args, strlen(args));
+    MD5_UPDATE(&c, buf, length);
 
-    MD5_Final(digest, &c);
+    MD5_FINAL(digest, &c);
 
     for (n = 0; n < 16; n++) {
         snprintf(&(out[n*2]), 16*2, "%02x", (unsigned int)digest[n]);

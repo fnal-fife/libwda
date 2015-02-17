@@ -17,8 +17,10 @@ VERSION=$(MAJOR).$(MINOR)
 platform=$(shell uname -s)
 
 ifeq ($(platform),Darwin)
-CXXFLAGS=-fPIC -g -O3 $(DEFS) $(ARCH) -I$(SRCDIR) -I. -I/usr/local/opt/openssl/include
-LDFLAGS=-L/usr/local/opt/openssl/lib
+###CXXFLAGS=-fPIC -g -O3 $(DEFS) $(ARCH) -I$(SRCDIR) -I. -I/usr/local/opt/openssl/include
+###LDFLAGS=-L/usr/local/opt/openssl/lib
+CXXFLAGS=-fPIC -g -O3 $(DEFS) $(ARCH) -I$(SRCDIR) -I.
+LDFLAGS=
 else
 CXXFLAGS=-fPIC -g -O3 $(DEFS) $(ARCH) -I$(SRCDIR) -I.
 LDFLAGS=
@@ -70,6 +72,11 @@ FORCE:
 %.o: %.c
 	gcc -c -o $@ $(CXXFLAGS) $<
 
+ifeq ($(platform),Darwin)
+test_ifbeam: test_ifbeam.o $(OBJ)
+	gcc -o ifbeam_test test_ifbeam.o $(CXXFLAGS) $(OBJ) -lcurl $(LDFLAGS)
+else
 test_ifbeam: test_ifbeam.o $(OBJ)
 	gcc -o ifbeam_test test_ifbeam.o $(CXXFLAGS) $(OBJ) -lcurl $(LDFLAGS) -lssl -lcrypto
+endif
 
