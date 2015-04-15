@@ -7,6 +7,10 @@ HDR=ifbeam_c.h wda.h
 OBJ=ifbeam.o wda.o
 SRC=ifbeam.c wda.c
 TST=test_ifbeam
+# allow a redefinition of the install directory
+ifndef $(PREFIX)
+  PREFIX=..
+endif
 ###CPPFLAGS=-I/usr/local/opt/openssl/include
 #
 MAJOR=2
@@ -29,10 +33,10 @@ endif
 all: $(GEN) $(BIN) $(LIB) $(SHLIB) $(TST)
 
 install:
-	test -d ../lib || mkdir ../lib
-	test -d ../include || mkdir -p ../include
-	cp -P $(SHLIB)* ../lib
-	cp $(HDR) ../include
+	test -d $(PREFIX)/lib || mkdir $(PREFIX)/lib
+	test -d $(PREFIX)/include || mkdir -p $(PREFIX)/include
+	cp -P $(SHLIB)* $(PREFIX)/lib
+	cp $(HDR) $(PREFIX)/include
 
 clean:
 	rm -f *.o *.a $(SHLIB)*
@@ -65,7 +69,7 @@ $(SHLIB): $(OBJ) $(UTLOBJ)
 endif
 
 wda_version.h: FORCE
-	test -d .git && echo '#define WDA_VERSION "'`git describe --tags --match 'wda*'`'"' > $@.new && mv $@.new $@ || true
+	test -d ../.git && echo '#define WDA_VERSION "'`git describe --tags --match 'wda*'`'"' > $@.new && mv $@.new $@ || true
 
 FORCE:
 
