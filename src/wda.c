@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <errno.h>
-#include <openssl/md5.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -16,10 +15,20 @@
 #include "wda_version.h"
 #include "wda.h"
 
-
 #define DEBUG   0
 #define DEBUG_MALLOC 0
-#define USE_MMAPPED 1
+
+
+# if defined(__linux__)
+#   define USE_MMAPPED 1
+#   include <openssl/md5.h>
+# endif
+
+# if defined(__APPLE__)
+#   define USE_MMAPPED 0
+#   define COMMON_DIGEST_FOR_OPENSSL 1
+#   include <CommonCrypto/CommonDigest.h>
+# endif
 /*
  * Internal data structures
  */
@@ -48,6 +57,7 @@ static int destroyHttpResponse(HttpResponse *response);
 static int initHttpResponse(HttpResponse *response);
 static HttpResponse get_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status);
 static inline HttpResponse mget_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status);
+static void postHTTP_retry(const char *url, const char *headers[], size_t nheaders, const char *data, size_t length, int timeout, int *status);
 
 
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
@@ -174,7 +184,7 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
         fprintf(stderr, "response.size=%d(+%d)\n", response->size, realsize);
         //fprintf(stderr, "#############writeMemoryCallback: response.memory = %p\n", response->memory);
     }
-# endif    
+# endif
     response->memory = tptr;
 
     memcpy(&(response->memory[response->size]), contents, realsize);
@@ -204,99 +214,116 @@ void *getHTTP(const char *url, const char *headers[], size_t nheaders, size_t *l
 }
 
 
-# if 0
+
 /*
- * Internal common function
+ * Internal helper
  */
-static HttpResponse get_http_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status)
+
+static struct curl_slist *add_headers(const char *headers[], size_t nheaders)
 {
-    CURL *curl_handle;
+    int i;
+    struct curl_slist *headerlist = NULL;
+    char user_agent[256];
+    snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
+    if (headers) {                                     // Add extra headers if present
+        for (i = 0; i < nheaders; i++) {
+            if (headers[i])
+                headerlist = curl_slist_append(headerlist, headers[i]);
+        }
+    }
+    headerlist = curl_slist_append(headerlist, user_agent);
+    return headerlist;
+}
+
+/*
+ * Internal common function. Calls curl_easy_perform() with the parameters set in the caller.
+ * Does mutiple retries if timeout provided in the arguments.
+ * Does round-robin selection from the URL list if provided.
+ * Now is used for GETs and POSTs
+ */
+static CURLcode perform_with_timeout(CURL *curl_handle,
+            HttpResponse *response,
+            const char *url, const char *urls[], size_t nurls,
+            const char *headers[], size_t nheaders,
+            int timeout, int *status)
+{
     CURLcode ret = CURLE_FAILED_INIT;
 
-    HttpResponse response;
-
-    int i, k;
     time_t t0 = time(NULL);
     time_t t1 = t0;
+    int iurl = -1;
+    const char *aurl = NULL;
+    int http_code;
 
-    initHttpResponse(&response);
+    srandom(t0);                     // Set seed for a new random sequence
 
-    curl_global_init(CURL_GLOBAL_ALL);
+    if (response) {
+        initHttpResponse(response);
+    }
+    aurl = (url!=NULL) ? url : ((urls!=NULL && nurls > 0) ? urls[iurl = random()%nurls] : NULL);
+    if (aurl==NULL) {                // Both url and urls are not set
+        *status = CURLE_FAILED_INIT; // Set status
+        return CURLE_FAILED_INIT;    // Return error
+    }
 
-    /* init the curl session */
-    curl_handle = curl_easy_init();
+    struct curl_slist *headerlist = add_headers(headers, nheaders);
+    // Set extra headers
+    curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);
+    // Set HTTP version
+    curl_easy_setopt(curl_handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 
-    if (curl_handle) {
-        struct curl_slist *headerlist = NULL;
-        char user_agent[256];
-        snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
-        if (headers) {
-            for (i = 0; i < nheaders; i++) {
-                if (headers[i])
-                    headerlist = curl_slist_append(headerlist, headers[i]);
+    int k = 0;
+    do {
+# if DEBUG
+        fprintf(stderr, "%s: URL index=%d\n", __func__, iurl);
+# endif
+        if (response) {
+            destroyHttpResponse(response); initHttpResponse(response);
+        }
+        // Specify the URL for request
+        curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
+
+        ret = curl_easy_perform(curl_handle);
+
+        *status = ret;
+        if (ret != CURLE_OK) {  // Check for errors
+            fprintf(stderr, "%s: curl_easy_perform() failed: %s\n", __func__, curl_easy_strerror(ret));
+            if (response) {
+                response->size = response->http_code = 0;
+            }
+        } else {
+            curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
+# if DEBUG
+            if (response) {
+                fprintf(stderr, "%s: HTTP status code=%d: '%s'\n", __func__, http_code, response->memory);
+            } else {
+                fprintf(stderr, "%s: HTTP status code=%d\n", __func__, http_code);
+            }
+# endif
+            if (http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
+                //Succeeded
+                break;
             }
         }
-        headerlist = curl_slist_append(headerlist, user_agent);
+        int dt = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
+        sleep(dt);
+        t1 = time(NULL);
 
-        /* specify URL to get */
-        curl_easy_setopt(curl_handle, CURLOPT_URL, url);
-
-        /* send all data to this function  */
-        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, writeMemoryCallback);
-
-        /* we pass our 'response' struct to the callback function */
-        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&response);
-
-        /* Enable redirection */
-        curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1);
-
-        ret = curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);    /* Set extra headers            */
-
-        k = 0;
-        do {
-            /* get it! */
-            destroyHttpResponse(&response);
-            initHttpResponse(&response);
-            ret = curl_easy_perform(curl_handle);
-            *status = ret;
-            if (ret != CURLE_OK) {                                              /* Check for errors             */
-                fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(ret));
-                response.size = 0;
-                response.http_code = 0;
-            } else {
-                    curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response.http_code);
-                if (response.http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
-                    //Succeeded
-                    break;
-                } else {
-                    //Failed
+        if (urls!=NULL && nurls > 0) {    // Go to next URL in a loop
+            iurl = ((iurl < 0) ? random() : iurl+1) % nurls;
+            aurl = urls[iurl];
+        }
 # if DEBUG
-                    fprintf(stderr, "HTTP status code=%d: '%s'\n", response.http_code, response.memory);
+        fprintf(stderr, "%s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", __func__, ret, k, dt, t0, t1, timeout);
 # endif
-                }
-            }
-            int d = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
-            sleep(d);
-            t1 = time(NULL);
-# if DEBUG
-            fprintf(stderr, "ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", ret, k, d, t0, t1, timeout);
-# endif
-        } while ((t1 - t0) < timeout);
-        /* cleanup curl stuff */
-        curl_easy_cleanup(curl_handle);
-        curl_slist_free_all(headerlist);                                        /* Free the custom headers      */
-# if DEBUG
-        fprintf(stderr, "get_http_response: %lu bytes retrieved\n", (long)response.size);
-# endif
+    } while ((t1 - t0) < timeout);
+
+    curl_slist_free_all(headerlist);            // Free the custom headers
+    if (response) {
+        response->http_code = http_code;        // Store HTTP status code in response if provided
     }
-    /* we're done with libcurl, so clean it up */
-    curl_global_cleanup();
-
-    *status = ret;                          // Return status
-    return response;                        // Return response structure
+    return ret;                                 // Return curl return code
 }
-# endif
-
 
 /*
  * Internal common function
@@ -311,43 +338,18 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
 
     HttpResponse response;
 
-    int i, k;
-    time_t t0 = time(NULL);
-    time_t t1 = t0;
-    int iurl = 0;
-    const char *aurl = NULL;
-
     initHttpResponse(&response);
 
-    if (url==NULL && (urls==NULL || nurls==0)) {
-        // Both url and urls are not set
-        *status = ret;              // Return status
-        return response;            // Return response structure
-    }
-    if (urls!=NULL && nurls > 0) {
-        iurl = random() % nurls;    // Random choice for first URL to try
-        aurl = urls[iurl];
-    }
-    if (url!=NULL) {
-        aurl = url;                 // Primary URL is present so start with it
-    }
+    ret = curl_global_init(CURL_GLOBAL_ALL);
 
-    curl_global_init(CURL_GLOBAL_ALL);
-
-    /* init the curl session */
+    if (ret != CURLE_OK) {              // Check for errors
+        curl_global_cleanup();
+        *status = ret;                  // Return status
+        return response;                // Return response structure
+    }
+    // init the curl session
     curl_handle = curl_easy_init();
-
     if (curl_handle) {
-        struct curl_slist *headerlist = NULL;
-        char user_agent[256];
-        snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
-        if (headers) {
-            for (i = 0; i < nheaders; i++) {
-                if (headers[i])
-                    headerlist = curl_slist_append(headerlist, headers[i]);
-            }
-        }
-        headerlist = curl_slist_append(headerlist, user_agent);
 
         /* send all data to this function  */
         curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, writeMemoryCallback);
@@ -358,60 +360,17 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
         /* Enable redirection */
         curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1);
 
-        ret = curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headerlist);    /* Set extra headers            */
+        ret = perform_with_timeout(curl_handle, &response, url, urls, nurls, headers, nheaders, timeout, status);
 
-        k = 0;
-        do {
-# if 0
-            fprintf(stderr, "mget_http_response: URL index=%d\n", iurl);
-# endif
-            /* specify URL to get */
-            curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
-            /* get it! */
-            destroyHttpResponse(&response);
-            initHttpResponse(&response);
-            ret = curl_easy_perform(curl_handle);
-            *status = ret;
-            if (ret != CURLE_OK) {                                              /* Check for errors             */
-                fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(ret));
-                response.size = 0;
-                response.http_code = 0;
-            } else {
-                    curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response.http_code);
-                if (response.http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
-                    //Succeeded
-                    break;
-                } else {
-                    //Failed
-# if DEBUG
-                    fprintf(stderr, "HTTP status code=%d: '%s'\n", response.http_code, response.memory);
-# endif
-                }
-            }
-            int d = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
-            sleep(d);
-            t1 = time(NULL);
-
-            if (nurls > 0) {
-                iurl = ++iurl % nurls;          // Go to next URL in a loop
-                aurl = urls[iurl];
-            }
-# if DEBUG
-            fprintf(stderr, "ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", ret, k, d, t0, t1, timeout);
-# endif
-        } while ((t1 - t0) < timeout);
-
-        /* cleanup curl stuff */
+        // Cleanup curl stuff
         curl_easy_cleanup(curl_handle);
-        curl_slist_free_all(headerlist);                                        /* Free the custom headers      */
 # if DEBUG
         fprintf(stderr, "mget_http_response: %lu bytes retrieved\n", (long)response.size);
 # endif
     }
-    /* we're done with libcurl, so clean it up */
+    // we're done with libcurl, so clean it up
     curl_global_cleanup();
 
-    *status = ret;                          // Return status
     return response;                        // Return response structure
 }
 
@@ -509,7 +468,7 @@ static inline HttpResponse mget_response(const char *url, const char *urls[], si
 /*
  *
  */
-void postHTTPsigned(const char *url, const char* password, const char *headers[], size_t nheaders, const char *data, size_t length, int *status)
+void postHTTPsigned_retry(const char *url, const char* password, const char *headers[], size_t nheaders, const char *data, size_t length, int timeout, int *status)
 {
     char salt[102];
     const char **hdrs = NULL;
@@ -544,11 +503,17 @@ void postHTTPsigned(const char *url, const char* password, const char *headers[]
     }
     hdrs[i++] = mptr;                                               // Add to headers list
 
-    postHTTP(url, hdrs, nheaders+2, data, length, status);          // Post the data with additional headers
+    postHTTP_retry(url, hdrs, nheaders+2, data, length, timeout, status);  // Post the data with additional headers
 
-    free(hdrs[--i]);                                                // Free allocated memory
-    free(hdrs[--i]);                                                // Free allocated memory
+    free((void *)(hdrs[--i]));                                      // Free allocated memory
+    free((void *)(hdrs[--i]));                                      // Free allocated memory
     free(hdrs);                                                     // Free allocated memory
+}
+
+
+void postHTTPsigned(const char *url, const char* password, const char *headers[], size_t nheaders, const char *data, size_t length, int *status)
+{
+    postHTTPsigned_retry(url, password, headers, nheaders, data, length, 0, status);
 }
 
 
@@ -570,7 +535,7 @@ void postHTTPsigned(const char *url, const char* password, const char *headers[]
 //  ......
 //  curl_slist_free_all(headerlist);
 //
-void postHTTP(const char *url, const char *headers[], size_t nheaders, const char *data, size_t length, int *status)
+static void postHTTP_retry(const char *url, const char *headers[], size_t nheaders, const char *data, size_t length, int timeout, int *status)
 {
     CURL *curl;
     CURLcode ret;
@@ -579,34 +544,24 @@ void postHTTP(const char *url, const char *headers[], size_t nheaders, const cha
     curl = curl_easy_init();
 
     if (curl) {
-        struct curl_slist *headerlist = NULL;
-        char user_agent[256];
-        snprintf(user_agent, 256, "User-Agent: wdaAPI/%s (UID=%d, PID=%d)", WDA_VERSION, getuid(), getpid());
-        if (headers) {
-            for (i = 0; i < nheaders; i++) {
-                if (headers[i])
-                    headerlist = curl_slist_append(headerlist, headers[i]);
-            }
-        }
-        headerlist = curl_slist_append(headerlist, user_agent);
-
-        curl_easy_setopt(curl, CURLOPT_URL, url);                               /* Set the target URL           */
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);                       /* Pass the pointer to the data */
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)length);            /* Pass the data length         */
-        if (headerlist) {
-            ret = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerlist);       /* Set extra headers            */
-        }
-        ret = curl_easy_perform(curl);                                          /* Do actual POST               */
+//      ret = curl_easy_perform(curl);                                          /* Do actual POST               */
+        ret = perform_with_timeout(curl, NULL, url, NULL, 0, headers, nheaders, timeout, status);
 
         if (ret != CURLE_OK) {                                                  /* Check for errors             */
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(ret));
+            fprintf(stderr, "%s: curl_easy_perform() failed: %s\n", __func__, curl_easy_strerror(ret));
         }
         curl_easy_cleanup(curl);                                                /* Cleanup                      */
-
-        curl_slist_free_all(headerlist);                                        /* Free the custom headers      */
     }
     curl_global_cleanup();                                                      /* Cleanup                      */
     *status = ret;
+}
+
+
+void postHTTP(const char *url, const char *headers[], size_t nheaders, const char *data, size_t length, int *status)
+{
+    postHTTP_retry(url, headers, nheaders, data, length, 0, status);
 }
 
 
@@ -650,7 +605,7 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
 
     /* Now break response to the rows */
     running = response.memory;                                  // Start from the beginning of the response buffer
-    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+    for (k = 0; (row = strsep(&running, "\n")); k++) {          // Walk through, find all newlines, replace them with '\0'
         //fprintf(stderr, "t = '%s'\n", row);
         //fprintf(stderr, "running = '%lx'\n", running);
         response.rows[k] = row;                                 // Store pointer to the line
@@ -686,7 +641,7 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
           k++;
     }
 # if DEBUG
-    fprintf(stderr, "mget_data_rows: %d lines retrieved\n", k);
+    fprintf(stderr, "%s: %d lines retrieved\n", __func__, k);
 # endif
     /* Allocate memory for array of rows */
 //  response.rows = (char **)malloc(sizeof(char *) * k + 8);
@@ -701,7 +656,7 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
 
     /* Now break response to the rows */
     running = response.memory;                                  // Start from the beginning of the response buffer
-    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+    for (k = 0; (row = strsep(&running, "\n")); k++) {          // Walk through, find all newlines, replace them with '\0'
         //fprintf(stderr, "t = '%s'\n", row);
         //fprintf(stderr, "running = '%lx'\n", running);
         response.rows[k] = row;                                 // Store pointer to the line
@@ -760,15 +715,15 @@ static int initHttpResponse(HttpResponse *response)
     if (response->memory == MAP_FAILED) {
         PRINT_ALLOC_ERROR(mmap);
         response->memory = NULL;
-        return 0;
+        return -1;
     }
     response->allocsize = MIN_SIZE;
 # else
-    response->memory = (char *)malloc(MIN_SIZE);	/* will be grown as needed by realloc   */
+    response->memory = (char *)malloc(MIN_SIZE);    /* will be grown as needed by realloc   */
     if (response->memory == NULL) {
         PRINT_ALLOC_ERROR(malloc);
         response->memory = NULL;
-        return 0;
+        return -1;
     }
     response->allocsize = MIN_SIZE;
     response->memory[0] = '\0';             /* Zero byte                                    */
@@ -776,6 +731,7 @@ static int initHttpResponse(HttpResponse *response)
     response->rows = NULL;                  /* no data at this point                        */
     response->nrows = response->size = 0;   /* no data at this point                        */
     response->http_code = 0;
+    return 0;
 }
 
 
@@ -829,7 +785,9 @@ static DataRec *parse_csv_row(const char *s)
             if (inquotes) continue;
             if (*sp==',') ncol++;
         }
-        //fprintf(stderr, "parse_csv: n=%d\n", ncol);
+# if DEBUG
+        fprintf(stderr, "%s: ncol=%d\n", __func__, ncol);
+#endif
         dataRec->ncolumns = ++ncol;                                 // Store the number of columns
 
 //      size_t csize = sizeof(char *) * dataRec->ncolumns;          // Allocated memory size
@@ -850,6 +808,9 @@ static DataRec *parse_csv_row(const char *s)
             if (*sp==',' || *sp=='\0') {
                 dataRec->columns[ncol++] = cp;                      // Store the pointer to the name
                 *sp = '\0';
+# if DEBUG
+                fprintf(stderr, "%s: col='%s'\n", __func__, cp);
+#endif
                 cp = sp + 1;
             }
         }
@@ -1104,14 +1065,15 @@ int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, i
     sptr = dataRec->columns[position];              // Start from the beginning of array
     if (strncmp(sptr, "\"[", 2)==0)
         sptr += 2;                                  // Skip double quote and square bracket
-    for (len = i = 0; i < buffer_size; i++) {
+    for (len = i = 0; i < dataRec->ncolumns-position && i < buffer_size; i++) {
         val = strtod(sptr, &eptr);                  // Try to convert
-# if DEBUG
-        fprintf(stderr, "s='%s' ", sptr);
-        fprintf(stderr, "[%d]=%f\n", i, val);
-# endif
         if (sptr==eptr) break;                      // End the loop if no coversion was performed
         if (*sptr=='\0') break;                     // End the loop if buffer ends
+        if (errno) break;                           // Error in decoding
+# if DEBUG
+        fprintf(stderr, "%s: decoded '%s' ", __func__, sptr);
+        fprintf(stderr, "[%d]<-%f\n", i, val);
+# endif
         buffer[len++] = val;                        // Store converted value, increase the length
         sptr = eptr + 1;                            // Shift the pointer to the next number
     }
