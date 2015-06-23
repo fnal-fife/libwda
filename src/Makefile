@@ -15,7 +15,7 @@ endif
 #
 MAJOR=2
 MINOR=21
-RELEASE=0
+RELEASE=1
 VERSION=$(MAJOR).$(MINOR)
 
 platform=$(shell uname -s)
@@ -52,7 +52,8 @@ $(SHLIB): $(OBJ) $(UTLOBJ)
 	    -install_name $(SHLIB).$(MAJOR).dylib \
 	    -compatibility_version $(MAJOR).0 \
 	    -current_version $(VERSION).$(RELEASE) \
-	    -undefined dynamic_lookup $(OBJ) -o $(SHLIB).$(VERSION).$(RELEASE).dylib
+	    -undefined error $(OBJ) -o $(SHLIB).$(VERSION).$(RELEASE).dylib -lcurl
+#	    -undefined dynamic_lookup $(OBJ) -o $(SHLIB).$(VERSION).$(RELEASE).dylib
 	ln -sf $(SHLIB).$(VERSION).$(RELEASE).dylib $(SHLIB).$(MAJOR).$(MINOR).dylib
 	ln -sf $(SHLIB).$(VERSION).$(RELEASE).dylib $(SHLIB).$(MAJOR).dylib
 	ln -sf $(SHLIB).$(VERSION).$(RELEASE).dylib $(SHLIB).dylib
