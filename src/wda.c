@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <errno.h>
-#include <openssl/md5.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -16,10 +15,20 @@
 #include "wda_version.h"
 #include "wda.h"
 
-
 #define DEBUG   0
 #define DEBUG_MALLOC 0
-#define USE_MMAPPED 1
+
+
+# if defined(__linux__)
+#   define USE_MMAPPED 1
+#   include <openssl/md5.h>
+# endif
+
+# if defined(__APPLE__)
+#   define USE_MMAPPED 0
+#   define COMMON_DIGEST_FOR_OPENSSL 1
+#   include <CommonCrypto/CommonDigest.h>
+# endif
 /*
  * Internal data structures
  */
@@ -228,7 +237,7 @@ static struct curl_slist *add_headers(const char *headers[], size_t nheaders)
 
 /*
  * Internal common function. Calls curl_easy_perform() with the parameters set in the caller.
- * Does mutiple retries if timeout provided in the arguments. 
+ * Does mutiple retries if timeout provided in the arguments.
  * Does round-robin selection from the URL list if provided.
  * Now is used for GETs and POSTs
  */
@@ -301,7 +310,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
         t1 = time(NULL);
 
         if (urls!=NULL && nurls > 0) {    // Go to next URL in a loop
-            iurl = ((iurl < 0) ? random() : iurl+1) % nurls;    
+            iurl = ((iurl < 0) ? random() : iurl+1) % nurls;
             aurl = urls[iurl];
         }
 # if DEBUG
@@ -496,8 +505,8 @@ void postHTTPsigned_retry(const char *url, const char* password, const char *hea
 
     postHTTP_retry(url, hdrs, nheaders+2, data, length, timeout, status);  // Post the data with additional headers
 
-    free(hdrs[--i]);                                                // Free allocated memory
-    free(hdrs[--i]);                                                // Free allocated memory
+    free((void *)(hdrs[--i]));                                      // Free allocated memory
+    free((void *)(hdrs[--i]));                                      // Free allocated memory
     free(hdrs);                                                     // Free allocated memory
 }
 
@@ -596,7 +605,7 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
 
     /* Now break response to the rows */
     running = response.memory;                                  // Start from the beginning of the response buffer
-    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+    for (k = 0; (row = strsep(&running, "\n")); k++) {          // Walk through, find all newlines, replace them with '\0'
         //fprintf(stderr, "t = '%s'\n", row);
         //fprintf(stderr, "running = '%lx'\n", running);
         response.rows[k] = row;                                 // Store pointer to the line
@@ -632,7 +641,7 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
           k++;
     }
 # if DEBUG
-    fprintf(stderr, "mget_data_rows: %d lines retrieved\n", k);
+    fprintf(stderr, "%s: %d lines retrieved\n", __func__, k);
 # endif
     /* Allocate memory for array of rows */
 //  response.rows = (char **)malloc(sizeof(char *) * k + 8);
@@ -647,7 +656,7 @@ static HttpResponse mget_data_rows(const char *url, const char *urls[], size_t n
 
     /* Now break response to the rows */
     running = response.memory;                                  // Start from the beginning of the response buffer
-    for (k = 0; row = strsep(&running, "\n"); k++) {            // Walk through, find all newlines, replace them with '\0'
+    for (k = 0; (row = strsep(&running, "\n")); k++) {          // Walk through, find all newlines, replace them with '\0'
         //fprintf(stderr, "t = '%s'\n", row);
         //fprintf(stderr, "running = '%lx'\n", running);
         response.rows[k] = row;                                 // Store pointer to the line
@@ -706,7 +715,7 @@ static int initHttpResponse(HttpResponse *response)
     if (response->memory == MAP_FAILED) {
         PRINT_ALLOC_ERROR(mmap);
         response->memory = NULL;
-        return 0;
+        return -1;
     }
     response->allocsize = MIN_SIZE;
 # else
@@ -714,7 +723,7 @@ static int initHttpResponse(HttpResponse *response)
     if (response->memory == NULL) {
         PRINT_ALLOC_ERROR(malloc);
         response->memory = NULL;
-        return 0;
+        return -1;
     }
     response->allocsize = MIN_SIZE;
     response->memory[0] = '\0';             /* Zero byte                                    */
@@ -722,6 +731,7 @@ static int initHttpResponse(HttpResponse *response)
     response->rows = NULL;                  /* no data at this point                        */
     response->nrows = response->size = 0;   /* no data at this point                        */
     response->http_code = 0;
+    return 0;
 }
 
 
@@ -775,7 +785,9 @@ static DataRec *parse_csv_row(const char *s)
             if (inquotes) continue;
             if (*sp==',') ncol++;
         }
-        //fprintf(stderr, "parse_csv: n=%d\n", ncol);
+# if DEBUG
+        fprintf(stderr, "%s: ncol=%d\n", __func__, ncol);
+#endif
         dataRec->ncolumns = ++ncol;                                 // Store the number of columns
 
 //      size_t csize = sizeof(char *) * dataRec->ncolumns;          // Allocated memory size
@@ -796,6 +808,9 @@ static DataRec *parse_csv_row(const char *s)
             if (*sp==',' || *sp=='\0') {
                 dataRec->columns[ncol++] = cp;                      // Store the pointer to the name
                 *sp = '\0';
+# if DEBUG
+                fprintf(stderr, "%s: col='%s'\n", __func__, cp);
+#endif
                 cp = sp + 1;
             }
         }
@@ -1050,14 +1065,15 @@ int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, i
     sptr = dataRec->columns[position];              // Start from the beginning of array
     if (strncmp(sptr, "\"[", 2)==0)
         sptr += 2;                                  // Skip double quote and square bracket
-    for (len = i = 0; i < buffer_size; i++) {
+    for (len = i = 0; i < dataRec->ncolumns-position && i < buffer_size; i++) {
         val = strtod(sptr, &eptr);                  // Try to convert
-# if DEBUG
-        fprintf(stderr, "s='%s' ", sptr);
-        fprintf(stderr, "[%d]=%f\n", i, val);
-# endif
         if (sptr==eptr) break;                      // End the loop if no coversion was performed
         if (*sptr=='\0') break;                     // End the loop if buffer ends
+        if (errno) break;                           // Error in decoding
+# if DEBUG
+        fprintf(stderr, "%s: decoded '%s' ", __func__, sptr);
+        fprintf(stderr, "[%d]<-%f\n", i, val);
+# endif
         buffer[len++] = val;                        // Store converted value, increase the length
         sptr = eptr + 1;                            // Shift the pointer to the next number
     }

@@ -10,7 +10,7 @@
 #include "ifbeam_c.h"
 
 #define IFB_RETRY_TIMEOUT 1200
-#define	MAX_VECTOR_SIZE	256
+#define MAX_VECTOR_SIZE    256
 
 #define MAX_UAGENT_SIZE 128
 static char g_uagent[MAX_UAGENT_SIZE] = {'\0'};
@@ -73,7 +73,7 @@ Dataset getEventVarForInterval(const char *url, const char *event, const char *v
  */
 int getNmeasurements(Dataset dataset) 
 {
-	return getNtuples(dataset)-1;
+    return getNtuples(dataset)-1;
 }
 
 /* 
@@ -81,39 +81,42 @@ int getNmeasurements(Dataset dataset)
  */
 Measurement getMeasurement(Dataset dataset, int i) 
 {
-	int error;							// Error code
-	int len;							// Vector length
-	double b[MAX_VECTOR_SIZE];			// Temporary buffer
-	Measurement m = NULL;				// Measurement handler
+    int error;                            // Error code
+    int len;                              // Vector length
+    double b[MAX_VECTOR_SIZE];            // Temporary buffer
+    Measurement m = NULL;                 // Measurement handler
 
-	errno = ENODATA;
-	Tuple t = getTuple(dataset, i);		// Try to get tuple
-	if (t) {															// Tuple found
-	    m = (Measurement)realloc(m, sizeof(*m));						// Create a measurement object
-	    if (m) {														// Success
-			m->vector_size = -1;										// Default value
-			m->clock = getLongValue(t, 0, &error);						// Store clock
-			if (error) return NULL;
-			getStringValue(t, 1, m->device, sizeof(m->device), &error);	// Store device name
-			if (error) return NULL;
-			getStringValue(t, 2, m->units, sizeof(m->units), &error);	// Store units
-			if (error) return NULL;
-			len = getDoubleArray(t, 3, b, sizeof(b), &error);			// Get vector
-			if (error) return NULL;
-			errno = 0;
-			if (len == 1) {
-				m->vector_size = 0;										// Scalar value stored
-				m->value = b[0];										// Store value 
-			} else if (len > 1) {
-				m->vector_size = len;									// Store vector length
-				m = realloc(m, sizeof(*m) + sizeof(double)*len);		// Get more memory to store vector
-				if (m) {												// Success
-					bcopy(b, m->vector, sizeof(double)*len);			// Store vector
-				}
-			}
-		}
-	}
-	return m;															// Return result
+    errno = ENODATA;
+    Tuple t = getTuple(dataset, i);        // Try to get tuple
+    if (t) {                                                            // Tuple found
+        int nf = getNfields(t);                                         // Number of fields in a row
+        m = (Measurement)realloc(m, sizeof(*m));                        // Create a measurement object
+        if (m) {                                                        // Success
+            m->vector_size = -1;                                        // Default value
+            m->clock = getLongValue(t, (nf==4) ? 0 : 2, &error);        // Store clock
+            if (error) return NULL;
+            getStringValue(t, 1, m->device, sizeof(m->device), &error); // Store device name
+            if (error) return NULL;
+            getStringValue(t, (nf==4) ? 2 : 3, m->units, sizeof(m->units), &error);   // Store units
+            if (error) return NULL;
+            len = getDoubleArray(t, (nf==4) ? 3 : 4, b, sizeof(b), &error);           // Get vector
+            if (error) return NULL;
+            errno = 0;
+            if (len == 1) {
+                m->vector_size = 0;                                     // Scalar value stored
+                m->value = b[0];                                        // Store value 
+            } else if (len > 1) {
+                m->vector_size = len;                                   // Store vector length
+                m = realloc(m, sizeof(*m) + sizeof(double)*len);        // Get more memory to store vector
+                if (m) {                                                // Success
+                    bcopy(b, m->vector, sizeof(double)*len);            // Store vector
+                } else {
+                    return NULL;
+                }
+            }
+        }
+    }
+    return m;                                                           // Return result
 }
 
 /* 
@@ -121,7 +124,7 @@ Measurement getMeasurement(Dataset dataset, int i)
  */
 Measurement getFirstMeasurement(Dataset dataset) 
 {
-	return getMeasurement(dataset, 1);
+    return getMeasurement(dataset, 1);
 }
 
 /* 
