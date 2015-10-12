@@ -70,8 +70,8 @@ int main(void)
     time_t t0 = time(NULL);
 //    ds = getBundleForInterval(url, "BNBShortTerm", t0-305, t0-300, &error);     // Get the data for bundle
 //    ds = getBundleForInterval(url, "Weather", t0-500, t0-300, &error);
-    ds = getBundleForInterval(url, "NuMI_Physics_A9", t0-320, t0-300, &error);
-//    ds = getBundleForInterval(url, "NuMI_Physics_1Hz", t0-320, t0-300, &error);
+//    ds = getBundleForInterval(url, "NuMI_Physics_A9", t0-320, t0-300, &error);
+    ds = getBundleForInterval(url, "NuMI_Physics_1Hz", t0-320, t0-300, &error);
 
 
     if (error) {                                            // Check for curl library errors
