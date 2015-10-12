@@ -14,8 +14,8 @@ endif
 ###CPPFLAGS=-I/usr/local/opt/openssl/include
 #
 MAJOR=2
-MINOR=21
-RELEASE=1
+MINOR=22
+RELEASE=0
 VERSION=$(MAJOR).$(MINOR)
 
 platform=$(shell uname -s)

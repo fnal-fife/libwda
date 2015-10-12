@@ -59,6 +59,7 @@ static HttpResponse get_response(const char *url, const char *headers[], size_t 
 static inline HttpResponse mget_response(const char *url, const char *urls[], size_t nurls, const char *headers[], size_t nheaders, int timeout, int *status);
 static void postHTTP_retry(const char *url, const char *headers[], size_t nheaders, const char *data, size_t length, int timeout, int *status);
 
+static int Debug = 0;
 
 #define PRINT_ALLOC_ERROR(a)   fprintf(stderr, "Not enough memory (%s returned NULL)" \
             " at %s:%d\n", #a, __FILE__, __LINE__)
@@ -274,13 +275,13 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
 
     int k = 0;
     do {
-# if DEBUG
-        fprintf(stderr, "%s: URL index=%d\n", __func__, iurl);
-# endif
         if (response) {
             destroyHttpResponse(response); initHttpResponse(response);
         }
         // Specify the URL for request
+        if (Debug >= 1) {   // DEBUG
+            fprintf(stderr, "%s: URL index=%d, URL='%s'\n", __func__, iurl, aurl);
+        }
         curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
 
         ret = curl_easy_perform(curl_handle);
@@ -293,13 +294,13 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             }
         } else {
             curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
-# if DEBUG
-            if (response) {
-                fprintf(stderr, "%s: HTTP status code=%d: '%s'\n", __func__, http_code, response->memory);
-            } else {
-                fprintf(stderr, "%s: HTTP status code=%d\n", __func__, http_code);
+            if (Debug >= 2) {   // DEBUG
+                if (response) {
+                    fprintf(stderr, "%s: HTTP status code=%d: '%s'\n", __func__, http_code, response->memory);
+                } else {
+                    fprintf(stderr, "%s: HTTP status code=%d\n", __func__, http_code);
+                }
             }
-# endif
             if (http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
                 //Succeeded
                 break;
@@ -313,9 +314,9 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             iurl = ((iurl < 0) ? random() : iurl+1) % nurls;
             aurl = urls[iurl];
         }
-# if DEBUG
-        fprintf(stderr, "%s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", __func__, ret, k, dt, t0, t1, timeout);
-# endif
+        if (Debug >= 2) {   // DEBUG
+            fprintf(stderr, "%s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", __func__, ret, k, dt, t0, t1, timeout);
+        }
     } while ((t1 - t0) < timeout);
 
     curl_slist_free_all(headerlist);            // Free the custom headers
@@ -335,6 +336,18 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
 {
     CURL *curl_handle;
     CURLcode ret = CURLE_FAILED_INIT;
+    char *dbg = getenv("LIBWDA_DEBUG");
+    if (dbg) {
+        if (strcmp("1", dbg)==0) {
+            Debug = 1;
+        } else if (strcmp("2", dbg)==0) {
+            Debug = 2;
+        } else if (strcmp("3", dbg)==0) {
+            Debug = 3;
+        }
+    } else {
+       Debug = 0;
+    }
 
     HttpResponse response;
 
