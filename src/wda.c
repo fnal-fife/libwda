@@ -91,6 +91,7 @@ void read_off_memory_status(statm_t *result)
 }
 # endif
 
+#define MIN(a,b)    ( ((a) <= (b)) ? (a) : (b) )
 
 
 /*
@@ -140,6 +141,15 @@ static char *MD5Signature(const char *pwd, const char *salt, const char *args, c
     return out;
 }
 
+/*
+ * Returns string buffer with ascii time representation
+ */
+static char *strtime() {
+    time_t tm = time(NULL);
+    char *ts = ctime(&tm);
+    ts[strlen(ts)-1] = '\0';
+    return ts;
+}
 
 
 /*
@@ -280,7 +290,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
         }
         // Specify the URL for request
         if (Debug >= 1) {   // DEBUG
-            fprintf(stderr, "%s: URL index=%d, URL='%s'\n", __func__, iurl, aurl);
+            fprintf(stderr, "[%s] %s: URL index=%d, URL='%s'\n", strtime(), __func__, iurl, aurl);
         }
         curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
 
@@ -296,9 +306,9 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
             if (Debug >= 2) {   // DEBUG
                 if (response) {
-                    fprintf(stderr, "%s: HTTP status code=%d: '%s'\n", __func__, http_code, response->memory);
+                    fprintf(stderr, "[%s] %s: HTTP status code=%d: '%.*s'...\n", strtime(), __func__, http_code, MIN(strlen(response->memory), 500), response->memory);
                 } else {
-                    fprintf(stderr, "%s: HTTP status code=%d\n", __func__, http_code);
+                    fprintf(stderr, "[%s] %s: HTTP status code=%d\n", strtime(), __func__, http_code);
                 }
             }
             if (http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
@@ -315,7 +325,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             aurl = urls[iurl];
         }
         if (Debug >= 2) {   // DEBUG
-            fprintf(stderr, "%s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", __func__, ret, k, dt, t0, t1, timeout);
+            fprintf(stderr, "[%s] %s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
         }
     } while ((t1 - t0) < timeout);
 
