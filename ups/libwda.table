@@ -15,6 +15,7 @@ Group:
         envSet(LIBWDA_FQ_DIR, ${UPS_PROD_DIR})
         # use LIBWDA_FQ_DIR
         envSet(LIBWDA_LIB, ${LIBWDA_FQ_DIR}/lib)
+        envSet(LIBWDA_INC, ${LIBWDA_FQ_DIR}/include)
         # add to path (and test for Darwin just in case we ever build there)
         if ( test `uname` = "Darwin" )
           envPrepend(DYLD_LIBRARY_PATH, ${LIBWDA_FQ_DIR}/lib)
