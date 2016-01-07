@@ -70,8 +70,8 @@ int main(void)
     time_t t0 = time(NULL);
 //    ds = getBundleForInterval(url, "BNBShortTerm", t0-305, t0-300, &error);     // Get the data for bundle
 //    ds = getBundleForInterval(url, "Weather", t0-500, t0-300, &error);
-//    ds = getBundleForInterval(url, "NuMI_Physics_A9", t0-320, t0-300, &error);
-    ds = getBundleForInterval(url, "NuMI_Physics_1Hz", t0-320, t0-300, &error);
+    ds = getBundleForInterval(url, "NuMI_Physics_A9", t0-320, t0-300, &error);
+//    ds = getBundleForInterval(url, "NuMI_Physics_1Hz", t0-320, t0-300, &error);
 
 
     if (error) {                                            // Check for curl library errors
@@ -84,9 +84,9 @@ int main(void)
 
     fprintf(stderr, "#######Bundle for interval...\n");
     fprintf(stderr, "\nntuples=%d\n\n", getNtuples(ds));    // Get the number of rows in the dataset
-# if 0
+# if 1
 //    for (i = 0; i < getNtuples(ds); i++) {
-    for (i = 0; i < 15; i++) {
+    for (i = 0; i < 30; i++) {
         tu = getTuple(ds, i);                                     // Returns NULL if out of range
         len = getStringValue(tu, 0, ss, sizeof (ss), &err);       // Returns string length
         fprintf(stderr, "[%d]: l=%d, s='%s'", i, len, ss);        // Print the results
@@ -138,8 +138,8 @@ int main(void)
 
 //==============================================
 
-    fprintf(stderr, "#######The 5-th tuple, should be array...\n");
-    tu = getTuple(ds, 5);                                           // Get the row with double array
+    fprintf(stderr, "#######The 7-th tuple, should be array...\n");
+    tu = getTuple(ds, 7);                                           // Get the row with double array
 
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
