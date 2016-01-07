@@ -1088,7 +1088,9 @@ int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, i
     sptr = dataRec->columns[position];              // Start from the beginning of array
     if (strncmp(sptr, "\"[", 2)==0)
         sptr += 2;                                  // Skip double quote and square bracket
-    for (len = i = 0; i < dataRec->ncolumns-position && i < buffer_size; i++) {
+    else if (*sptr == '[')
+        sptr += 1;                                  // Skip square bracket
+    for (len = i = 0; i < dataRec->ncolumns-position; i++) {
         val = strtod(sptr, &eptr);                  // Try to convert
         if (sptr==eptr) break;                      // End the loop if no coversion was performed
         if (*sptr=='\0') break;                     // End the loop if buffer ends
@@ -1097,10 +1099,15 @@ int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, i
         fprintf(stderr, "%s: decoded '%s' ", __func__, sptr);
         fprintf(stderr, "[%d]<-%f\n", i, val);
 # endif
-        buffer[len++] = val;                        // Store converted value, increase the length
+        if (len < buffer_size)
+            buffer[len] = val;                      // Store converted value, increase the length
+        len++;
         sptr = eptr + 1;                            // Shift the pointer to the next number
     }
-    *error = errno;
+    if (i > buffer_size && errno == 0)
+        *error = ENOBUFS;
+    else
+        *error = errno;
     return len;
 }
 
@@ -1119,15 +1126,22 @@ int getIntArray(Tuple tuple, int position, long *buffer, int buffer_size, int *e
     errno = 0;
     sptr = dataRec->columns[position];              // Start from the beginning of array
     if (strncmp(sptr, "\"[", 2)==0)
-        sptr = dataRec->columns[position] + 2;      // Skip double quote and square bracket
-    for (len = i = 0; i < buffer_size; i++) {
+        sptr += 2;                                  // Skip double quote and square bracket
+    else if (*sptr == '[')
+        sptr += 1;                                  // Skip square bracket
+    for (len = i = 0; i < dataRec->ncolumns-position; i++) {
         val = strtol(sptr, &eptr, 10);              // Try to convert
         if (sptr==eptr) break;                      // End the loop if no coversion was performed
         if (*sptr=='\0') break;                     // End the loop if buffer ends
-        buffer[len++] = val;                        // Store converted value, increase the length
+        if (len < buffer_size)
+            buffer[len] = val;                      // Store converted value, increase the length
+        len++;
         sptr = eptr + 1;                            // Shift the pointer to the next number
     }
-    *error = errno;
+    if (i > buffer_size && errno == 0)
+        *error = ENOBUFS;
+    else
+        *error = errno;
     return len;
 }
 
