@@ -24,6 +24,11 @@ typedef void *Tuple;
 void *getHTTP(const char *url, const char *headers[], size_t nheaders, size_t *length, int *status);
 
 /*
+ * As the function above but with additional timeout parameter
+ */
+void *getHTTPWithTimeout(const char *url, const char *headers[], size_t nheaders, size_t *length, int timeout, int *status);
+
+/*
  * Low level generic function which posts the whole buffer of given length
  */
 void postHTTP(const char *url, const char *headers[], size_t nheaders, const char *data, size_t length, int *status);
@@ -64,17 +69,17 @@ long getLongValue(Tuple tuple, int position, int *error);       /* Returns integ
 
 double getDoubleValue(Tuple tuple, int position, int *error);   /* Returns float from specified position in a tuple     */
 
-/* 
- * Copies a string from specified position in a tuple, returns string length        
+/*
+ * Copies a string from specified position in a tuple, returns string length
  */
-int getStringValue(Tuple tuple, int position, char *buffer, int buffer_size, int *error);   
+int getStringValue(Tuple tuple, int position, char *buffer, int buffer_size, int *error);
 
-/* 
- * Copies a double array from specified position in a tuple, returns actual array length  
+/*
+ * Copies a double array from specified position in a tuple, returns actual array length
  */
-int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, int *error); 
+int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, int *error);
 
-/* 
+/*
  * Copies an integer array from specified position in a tuple, returns actual array length
  */
 int getLongArray(Tuple tuple, int position, long *buffer, int buffer_size, int *error);
@@ -91,8 +96,8 @@ long getHTTPstatus(Dataset dataset);		/* Returns HTTP status code					*/
 
 char *getHTTPmessage(Dataset dataset);		/* Returns HTTP status message				*/
 
-#ifdef __cplusplus 
-} 
-#endif 
+#ifdef __cplusplus
+}
+#endif
 
 #endif

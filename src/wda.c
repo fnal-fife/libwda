@@ -227,6 +227,20 @@ void *getHTTP(const char *url, const char *headers[], size_t nheaders, size_t *l
 
 
 /*
+ * The function communicates with the server using CURL library
+ * It returns pointer to the data as return value and passes data size via parameter
+ */
+void *getHTTPWithTimeout(const char *url, const char *headers[], size_t nheaders, size_t *length, int timeout, int *status)
+{
+    HttpResponse response = get_response(url, headers, nheaders, timeout, status);
+
+    *length = response.size;                // Return data length
+    return (void *)response.memory;         // Return pointer to the buffer
+}
+
+
+
+/*
  * Internal helper
  */
 
