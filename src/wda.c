@@ -279,6 +279,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
     int iurl = -1;
     const char *aurl = NULL;
     int http_code;
+    int dt;
 
     srandom(t0);                     // Set seed for a new random sequence
 
@@ -330,13 +331,17 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
                 break;
             }
         }
-        int dt = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
-        sleep(dt);
-        t1 = time(NULL);
-
-        if (urls!=NULL && nurls > 0) {    // Go to next URL in a loop
+        if (urls!=NULL && nurls > 0) {    // Go to next URL in the list
             iurl = ((iurl < 0) ? random() : iurl+1) % nurls;
             aurl = urls[iurl];
+        } else if ((http_code / 100) == 4) {
+            // Client erred - can't continue
+            break;
+        } else {
+            // sleep and retry
+            dt = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
+            sleep(dt);
+            t1 = time(NULL);
         }
         if (Debug >= 2) {   // DEBUG
             fprintf(stderr, "[%s] %s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
@@ -352,7 +357,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
 
 /*
  * Internal common function
- * Main finction, does all work using libcurl.
+ * Main function, does all work using libcurl.
  * If 'url' argument is present uses it as a primary source.
  * If 'urls' argument is present uses it as a backup sources with the first randomly selected and then goes round robin.
  */
@@ -1217,4 +1222,3 @@ char *getHTTPmessage(Dataset dataset)
 {
     return ((HttpResponse *)dataset)->memory;
 }
-
