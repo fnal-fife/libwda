@@ -41,7 +41,7 @@ typedef struct {
 } DataRec;
 
 
-typedef struct {
+typedef struct HttpResponse {
     char *memory;       // The buffer from HTTP response
     size_t size;        // The size of the buffer (in bytes)
     size_t allocsize;   // The allocated size of the buffer (in bytes)
@@ -174,7 +174,7 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
 # endif
 # if USE_MMAPPED
         tptr = (char *)mremap(response->memory, response->allocsize, newalloc, MREMAP_MAYMOVE);
-        if (tptr == MAP_FAILED) {
+        if (tptr == MAP_FAILED || tptr == 0) {
             /* out of memory! */
             PRINT_ALLOC_ERROR(mremap);
             return 0;
@@ -188,6 +188,7 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
         }
 # endif
         response->allocsize = newalloc;
+        response->memory = tptr; // If reallocated size, set response->memory to new memory buffer size ptr
     }
 # if DEBUG_MALLOC
     if (tptr!=response->memory) {
@@ -196,8 +197,6 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
         //fprintf(stderr, "#############writeMemoryCallback: response.memory = %p\n", response->memory);
     }
 # endif
-    response->memory = tptr;
-
     memcpy(&(response->memory[response->size]), contents, realsize);
     response->size += realsize;
     response->memory[response->size] = '\0';
@@ -210,6 +209,31 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
 }
 
 
+/*
+ * External function to return a handle to the HttpResponse
+ */
+HttpResponse *get_response_handle(const char* url, const char *headers[], size_t nheaders, size_t *length, int *status)
+{
+    HttpResponse response = get_response(url, headers, nheaders, 0, status);
+    *length = response.size;
+
+    HttpResponse *response_cpy = (HttpResponse*)malloc(sizeof(HttpResponse));
+    *response_cpy = response;
+    return response_cpy;
+}
+
+// Given an HttpResponse handle eturn pointer to HttpResponse buffer
+void *get_response_buffer(HttpResponse *response)
+{
+    return (void *)response->memory;
+}
+
+// Wrapper for destroyHttpResponse to release buffer memory to system given a HttpResponse handle
+void release_response_buffer(HttpResponse *response)
+{
+    destroyHttpResponse(response); // deallocate the buffer
+    free(response);// Need to deallocate the rest of the HttpResponse
+}
 
 
 /*
@@ -278,7 +302,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
     time_t t1 = t0;
     int iurl = -1;
     const char *aurl = NULL;
-    int http_code;
+    long http_code = -1;
     int dt;
 
     srandom(t0);                     // Set seed for a new random sequence
