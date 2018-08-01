@@ -212,7 +212,7 @@ static size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, voi
 /*
  * External function to return a handle to the HttpResponse
  */
-HttpResponse *get_response_handle(const char* url, const char *headers[], size_t nheaders, size_t *length, int *status)
+HttpResponse *wda_get_response_handle(const char* url, const char *headers[], size_t nheaders, size_t *length, int *status)
 {
     HttpResponse response = get_response(url, headers, nheaders, 0, status);
     *length = response.size;
@@ -223,13 +223,13 @@ HttpResponse *get_response_handle(const char* url, const char *headers[], size_t
 }
 
 // Given an HttpResponse handle eturn pointer to HttpResponse buffer
-void *get_response_buffer(HttpResponse *response)
+void *wda_get_response_buffer(HttpResponse *response)
 {
     return (void *)response->memory;
 }
 
 // Wrapper for destroyHttpResponse to release buffer memory to system given a HttpResponse handle
-void release_response_buffer(HttpResponse *response)
+void wda_release_response_buffer(HttpResponse *response)
 {
     destroyHttpResponse(response); // deallocate the buffer
     free(response);// Need to deallocate the rest of the HttpResponse

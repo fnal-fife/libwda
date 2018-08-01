@@ -22,17 +22,17 @@ typedef struct HttpResponse HttpResponse;
 /*
  * External function to return a handle to the HttpResponse
  */
-HttpResponse *get_response_handle(const char* url, const char *headers[], size_t nheaders, size_t *length, int *status);
+HttpResponse *wda_get_response_handle(const char* url, const char *headers[], size_t nheaders, size_t *length, int *status);
 
 /*
  * Accessor: Returns pointer to HttpResponse buffer
  */
-void *get_response_buffer(HttpResponse *response);
+void *wda_get_response_buffer(HttpResponse *response);
 
 /*
  * Wrapper for destroyHttpResponse
  */
-void release_response_buffer(HttpResponse *response);
+void wda_release_response_buffer(HttpResponse *response);
 
 
 
