@@ -41,7 +41,7 @@ typedef struct {
 } DataRec;
 
 
-typedef struct HttpResponse {
+struct HttpResponse {
     char *memory;       // The buffer from HTTP response
     size_t size;        // The size of the buffer (in bytes)
     size_t allocsize;   // The allocated size of the buffer (in bytes)
@@ -50,7 +50,7 @@ typedef struct HttpResponse {
     size_t idx;         // Current index
     long http_code;     // Status code
     DataRec *dataRecs[0];   // Array of parsed data records. Filled by getTuple calls
-} HttpResponse;
+};
 
 
 static int destroyHttpResponse(HttpResponse *response);
