@@ -16,6 +16,7 @@ extern "C" {
 typedef void *Dataset;
 typedef void *Tuple;
 
+struct HttpResponse;
 typedef struct HttpResponse HttpResponse;
 
 
