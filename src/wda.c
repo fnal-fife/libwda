@@ -352,6 +352,8 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             }
             if (http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
                 //Succeeded
+                if (k > 0)
+                    fprintf(stderr, "[%s] %s: rc=%d, retry=%d, delay=%d, t0=%ld, t1=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
                 break;
             }
         }
@@ -366,9 +368,10 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             dt = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
             sleep(dt);
             t1 = time(NULL);
+            fprintf(stderr, "[%s] %s: rc=%d, retry=%d, delay=%d, t0=%ld, t1=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
         }
         if (Debug >= 2) {   // DEBUG
-            fprintf(stderr, "[%s] %s: ret=%d, k=%d, delay=%d, t0=%ld, t1=%ld to=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
+            fprintf(stderr, "[%s] %s: rc=%d, retry=%d, delay=%d, t0=%ld, t1=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
         }
     } while ((t1 - t0) < timeout);
 
@@ -1154,7 +1157,7 @@ int getDoubleArray(Tuple tuple, int position, double *buffer, int buffer_size, i
     return len;
 }
 
-int getIntArray(Tuple tuple, int position, long *buffer, int buffer_size, int *error)
+int getLongArray(Tuple tuple, int position, long *buffer, int buffer_size, int *error)
 {
     DataRec *dataRec = (DataRec *)tuple;
     if (position < 0 || position >= dataRec->ncolumns) {
