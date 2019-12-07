@@ -53,7 +53,8 @@ int main(void)
     statm_t stat;
 
 //    const char *url = "http://dbdata0vm.fnal.gov:8099/ifbeam/data";
-    const char *url = "http://ifbcollectorgpvm04.fnal.gov:8088/ifbeam/data";
+    // const char *url = "http://ifbcollectorgpvm04.fnal.gov:8088/ifbeam/data";
+    const char *url = "http://ifbcollectorgpvm04.fnal.gov:9090/ifbeam/data";
 
 
     Dataset ds;
@@ -89,14 +90,14 @@ int main(void)
     for (i = 0; i < 30; i++) {
         tu = getTuple(ds, i);                                     // Returns NULL if out of range
         len = getStringValue(tu, 0, ss, sizeof (ss), &err);       // Returns string length
-        fprintf(stderr, "[%d]: l=%d, s='%s'", i, len, ss);        // Print the results
+        fprintf(stderr, "[%d]: len=%d, s0='%s'", i, len, ss);     // Print the results
         len = getStringValue(tu, 1, ss, sizeof (ss), &err);       // Returns string length
-        fprintf(stderr, " s='%s'\n", ss);                         // Print the results
+        fprintf(stderr, " s1='%s'\n", ss);                        // Print the results
     }
 # endif
 //==============================================
 
-    fprintf(stderr, "#######The first tuple...\n");
+    fprintf(stderr, "\n#######The first tuple...\n");
 //  tu = getTuple(ds, 1);                               // Returns NULL if out of range
     tu = getFirstTuple(ds);                             // Get the very first row - contains the column names
     // If we get the names print them
@@ -106,7 +107,7 @@ int main(void)
 
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
-            fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
+            fprintf(stderr, "[%d]: len=%d, s='%s'\n", i, len, ss);    // Print the results
         }
         fprintf(stderr, "err=%d\n", err);
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
@@ -125,7 +126,7 @@ int main(void)
 
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
-            fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
+            fprintf(stderr, "[%d]: len=%d, s='%s'\n", i, len, ss);    // Print the results
         }
         // Get double
         fprintf(stderr, "[3]: v=%f\n", getDoubleValue(tu, 3, &err));// Now extract the double value from the 3-rd column
@@ -138,14 +139,14 @@ int main(void)
 
 //==============================================
 
-    fprintf(stderr, "#######The 7-th tuple, should be array...\n");
-    tu = getTuple(ds, 7);                                           // Get the row with double array
+    fprintf(stderr, "#######The 6-th tuple, should be array...\n");
+    tu = getTuple(ds, 6);                                           // Get the row with double array
 
     if (tu != NULL) {                                               // If everything is OK
         int nc = getNfields(tu);                                    // Get the number of columns in this row
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
-            fprintf(stderr, "[%d]: l=%d, s='%.25s'\n", i, len, ss); // Print the results
+            fprintf(stderr, "[%d]: len=%d, s='%.25s'\n", i, len, ss); // Print the results
         }
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
 
@@ -186,7 +187,7 @@ int main(void)
         fprintf(stderr, "vector_size=%zu\n", me->vector_size);
         if (me->vector_size > 0) {
             len = me->vector_size;
-            fprintf(stderr, "********* vec=%p\n", me->vector);  // debug
+            fprintf(stderr, "********* vec=%p\n", me->vector);      // debug
             for (i = 0; i < len; i++) {                             // Print the results
                 fprintf(stderr, "%f, ", (me->vector)[i]);
             }
@@ -232,7 +233,7 @@ int main(void)
 
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
-            fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
+            fprintf(stderr, "[%d]: len=%d, s='%s'\n", i, len, ss);  // Print the results
         }
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
     }
@@ -255,7 +256,7 @@ int main(void)
         fprintf(stderr, "vector_size=%zu\n", me->vector_size);
         if (me->vector_size > 0) {
             len = me->vector_size;
-            fprintf(stderr, "********* vec=%p\n", me->vector);  // debug
+            fprintf(stderr, "********* vec=%p\n", me->vector);      // debug
             for (i = 0; i < len; i++) {                             // Print the results
                 fprintf(stderr, "%f, ", me->vector[i]);
             }
@@ -283,10 +284,10 @@ int main(void)
 
         for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
             len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
-            fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
+            fprintf(stderr, "[%d]: len=%d, s='%s'\n", i, len, ss);  // Print the results
         }
         // Get double
-        fprintf(stderr, "[4]: v=%f\n", getDoubleValue(tu, 4, &err));// Now extract the double value from the 4-th column
+        fprintf(stderr, "[4]: parsed v=%f\n", getDoubleValue(tu, 4, &err));// Now extract the double value from the 4-th column
         fprintf(stderr, "e=%s\n\n", strerror(err));                 // Was it OK?
     } else {
         fprintf(stderr, "No such tuple"); perror("...");

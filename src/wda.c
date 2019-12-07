@@ -304,6 +304,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
     const char *aurl = NULL;
     long http_code = -1;
     int dt;
+    char *ca_info;
 
     srandom(t0);                     // Set seed for a new random sequence
 
@@ -332,7 +333,14 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             fprintf(stderr, "[%s] %s: URL index=%d, URL='%s'\n", strtime(), __func__, iurl, aurl);
         }
         curl_easy_setopt(curl_handle, CURLOPT_URL, aurl);
-
+        if (ca_info = getenv("SSL_CERT_FILE")) {
+            if (strlen(ca_info) > 0) {
+                curl_easy_setopt(curl_handle, CURLOPT_CAINFO, ca_info);
+            } else {
+                curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0);
+                fprintf(stderr, "[%s] %s: Warning: CA verification is off. URL='%s'\n", strtime(), __func__, aurl);
+            }
+        }
         ret = curl_easy_perform(curl_handle);
 
         *status = ret;
@@ -513,11 +521,12 @@ static HttpResponse get_response(const char *url, const char *headers[], size_t 
     const char *fp = "file://";
 //  const char *hp = "http://";
 
-    if (strncasecmp(url, fp, strlen(fp))==0) {
+    // if (strncasecmp(url, fp, strlen(fp))==0) {
 
-        return get_csv_file(url+strlen(fp), status);
+    //     return get_csv_file(url+strlen(fp), status);
 
-    } else {
+    // } else
+    {
 
         return mget_http_response(url, NULL, 0, headers, nheaders, timeout, status);
 
@@ -831,6 +840,7 @@ static DataRec *parse_csv_row(const char *s)
     char *cp;
     char *sp;
     char *qp;
+    char *tp;
     int len;
     int i, j, ncol, inquotes;
     register char *ss;
@@ -849,11 +859,34 @@ static DataRec *parse_csv_row(const char *s)
         //
         // Find the number of columns
         //
+# if 0
         for (sp = ss, ncol = 0, inquotes = 0; *sp; sp++) {
             if (*sp=='"') inquotes = !inquotes;
             if (inquotes) continue;
             if (*sp==',') ncol++;
         }
+# else
+        int fidx;
+        for (sp = ss, ncol = 0, inquotes = 0, fidx = 0; *sp; sp++, fidx++) {
+            if (fidx == 0 && *sp == '"') {
+                inquotes = !inquotes;
+                continue;
+            }
+            if (inquotes) {
+                if (*sp == '"' && *(sp+1) == '"') {
+                    sp++;                       // If in quotes and see double-quote pair skip them
+                } else if (*sp == '"') {
+                    inquotes = !inquotes;
+                    continue;                   // Go to the next symbol
+                }
+            } else {
+                if (*sp == ',') {               // Count commas if not in quotes
+                    ncol++;
+                    fidx = -1;
+                }
+            }
+        }
+# endif
 # if DEBUG
         fprintf(stderr, "%s: ncol=%d\n", __func__, ncol);
 #endif
@@ -871,6 +904,7 @@ static DataRec *parse_csv_row(const char *s)
 
         sp = ss;                                                    // Start from the begining of the line
         //fprintf(stderr, "parse_csv: s='%s'\n", ss);
+# if 0
         for (cp = sp = ss, ncol = 0, inquotes = 0; ncol < dataRec->ncolumns; sp++) {
             if (*sp=='"') inquotes = !inquotes;
             if (inquotes) continue;
@@ -883,6 +917,37 @@ static DataRec *parse_csv_row(const char *s)
                 cp = sp + 1;
             }
         }
+# else
+        // for (cp = sp = tp = ss, ncol = inquotes = fidx = 0; ncol < dataRec->ncolumns, *sp; sp++, tp++, fidx++) {
+        for (cp = sp = tp = ss, ncol = inquotes = fidx = 0; ncol < dataRec->ncolumns; sp++, tp++, fidx++) {
+            if (fidx == 0 && *sp == '"') {          // Quoted string can start only right after the delimiter
+                inquotes = !inquotes;               // We are in quoted string, set the flag
+                tp--;                               // Adjust target pointer to overwrite opening double-quote
+                continue;                           // Go to the next symbol
+            }
+            if (inquotes) {
+                if (*sp == '"' && *(sp+1) == '"') { // Found a double-quote pair
+                    sp++;                           // If in quotes and see double-quote pair skip one
+                } else if (*sp == '"') {            // Found а solitary double-quote symbol closing a string
+                    inquotes = !inquotes;           // We are leaving quoted string, reset the flag
+                    tp--;                           // Adjust target pointer to skip closing double-quote symbol
+                    continue;                       // Go to the next symbol
+                }
+                *tp = *sp;                          // Copy source string character to target position
+            } else {                                // We are not in quoted string
+                if (*sp==',' || *sp=='\0') {        // Found the delimiter
+                    dataRec->columns[ncol++] = cp;  // Store the pointer to the beginning of the field
+                    fidx = -1;                      // Reset index inside field
+                    *sp = '\0';                     // Replace ',' with zero byte to terminate the field
+                    *tp = '\0';                     // If it was quoted string terminate processed string
+                    tp = sp;                        // Field ended, reset target pointer to current source pointer
+                    cp = sp + 1;                    // Set column pointer to the beginning of the next column
+                    // *tp = '\xa4';                   // Debug
+                    // *sp = ';';                      // Debug
+                }
+            }
+        }
+#endif
     }
 //    fprintf(stderr, "parse_csv: allocated=%d(hdr)+%d(arr)+%d(str)\n", sizeof(DataRec), csize, strlen(s));
     return dataRec;
