@@ -358,6 +358,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
                     fprintf(stderr, "[%s] %s: HTTP status code=%d\n", strtime(), __func__, http_code);
                 }
             }
+            http_code = http_code==0 ? 200 : http_code;
             if (http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
                 //Succeeded
                 if (k > 0)
@@ -473,13 +474,23 @@ static HttpResponse get_csv_file(const char *url, int *status)
             long bufsize = ftell(fp);
             if (bufsize > 0) {
                 /* Allocate our buffer to that size. */
-                char *tptr = (char *)realloc(response.memory, sizeof(char) * (bufsize + 1));
+# if USE_MMAPPED
+                char *tptr = (char *)mremap(response.memory, response.allocsize, sizeof(char) * (bufsize + 2), MREMAP_MAYMOVE);
+                if (tptr == MAP_FAILED || tptr == 0) {
+                    /* out of memory! */
+                    PRINT_ALLOC_ERROR(mremap);
+                    *status = errno;                    // Return status
+                    return response;
+                }
+# else
+                char *tptr = (char *)realloc(response.memory, sizeof(char) * (bufsize + 2));
                 if (tptr == NULL) {
                     /* out of memory! */
                     PRINT_ALLOC_ERROR(realloc);
                     *status = errno;                    // Return status
                     return response;
                 }
+# endif
 # if DEBUG_MALLOC
                 if (tptr!=response.memory) {
                     fprintf(stderr, "############# response.memory moved on step %d, d=%d\n", i, (long)(tptr-response.memory));
@@ -519,7 +530,7 @@ static HttpResponse get_csv_file(const char *url, int *status)
 static HttpResponse get_response(const char *url, const char *headers[], size_t nheaders, int timeout, int *status)
 {
     const char *fp = "file://";
-//  const char *hp = "http://";
+    // const char *hp = "http://";
 
     // if (strncasecmp(url, fp, strlen(fp))==0) {
 
