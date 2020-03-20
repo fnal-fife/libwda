@@ -304,7 +304,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
     const char *aurl = NULL;
     long http_code = -1;
     int dt;
-    char *ca_info;
+    char *ca_info, *ca_path;
 
     srandom(t0);                     // Set seed for a new random sequence
 
@@ -339,6 +339,11 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             } else {
                 curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0);
                 fprintf(stderr, "[%s] %s: Warning: CA verification is off. URL='%s'\n", strtime(), __func__, aurl);
+            }
+        }
+        if (ca_path = getenv("SSL_CERT_DIR")) {
+            if (strlen(ca_path) > 0) {
+                curl_easy_setopt(curl_handle, CURLOPT_CAPATH, ca_path);
             }
         }
         ret = curl_easy_perform(curl_handle);
