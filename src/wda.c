@@ -303,8 +303,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
     int iurl = -1;
     const char *aurl = NULL;
     long http_code = -1;
-    int dt;
-    char *ca_info, *ca_path;
+    char *ca_info, *ca_path, *connect_to;
 
     srandom(t0);                     // Set seed for a new random sequence
 
@@ -323,6 +322,7 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
     // Set HTTP version
     curl_easy_setopt(curl_handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 
+    int dt = 0;
     int k = 0;
     do {
         if (response) {
@@ -342,23 +342,43 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             }
         }
         if (ca_path = getenv("SSL_CERT_DIR")) {
+            // fprintf(stderr, "[%s] %s: ca_path='%s'\n", strtime(), __func__, ca_path);
             if (strlen(ca_path) > 0) {
-                curl_easy_setopt(curl_handle, CURLOPT_CAPATH, ca_path);
+                fprintf(stderr, "[%s] %s: ****** ca_path='%s'\n", strtime(), __func__, ca_path);
+                curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 1);
+                ret = curl_easy_setopt(curl_handle, CURLOPT_CAPATH, ca_path);
+                if (ret != CURLE_OK) {  // Check for errors
+                    fprintf(stderr, "%s: curl_easy_perform() failed: %s\n", __func__, curl_easy_strerror(ret));
+                } else {
+                    fprintf(stderr, "%s: curl_easy_perform() CURLOPT_CAPATH: %s\n", __func__, curl_easy_strerror(ret));
+                }
             }
         }
+        if (connect_to = getenv("LIBWDA_CONNECTTIMEOUT")) {
+            if (strlen(connect_to) > 0) {
+                long cto = atol(connect_to);
+                curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT, cto);
+            } else {
+                /* complete connection within 30 seconds */
+                curl_easy_setopt(curl_handle, CURLOPT_CONNECTTIMEOUT, 30L);
+            }
+        }
+
         ret = curl_easy_perform(curl_handle);
 
         *status = ret;
         if (ret != CURLE_OK) {  // Check for errors
-            fprintf(stderr, "%s: curl_easy_perform() failed: %s\n", __func__, curl_easy_strerror(ret));
+            fprintf(stderr, "[%s] %s: curl_easy_perform() failed: '%s'\n", strtime(), __func__, curl_easy_strerror(ret));
+            fprintf(stderr, "[%s] %s: URL='%s'\n", strtime(), __func__, aurl);
+            fprintf(stderr, "[%s] %s: rc=%d, try=%d, delay=%d, t0=%ld, dt=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1-t0, timeout);
             if (response) {
                 response->size = response->http_code = 0;
             }
         } else {
             curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
-            if (Debug >= 2) {   // DEBUG
+            if (Debug >= 3) {   // DEBUG
                 if (response) {
-                    fprintf(stderr, "[%s] %s: HTTP status code=%d: '%.*s'...\n", strtime(), __func__, http_code, MIN(strlen(response->memory), 500), response->memory);
+                    fprintf(stderr, "[%s] %s: HTTP status code=%d: '%.*s'...\n", strtime(), __func__, http_code, MIN(strlen(response->memory), 50), response->memory);
                 } else {
                     fprintf(stderr, "[%s] %s: HTTP status code=%d\n", strtime(), __func__, http_code);
                 }
@@ -366,8 +386,10 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             http_code = http_code==0 ? 200 : http_code;
             if (http_code == 200 && ret != CURLE_ABORTED_BY_CALLBACK) {
                 //Succeeded
-                if (k > 0)
-                    fprintf(stderr, "[%s] %s: rc=%d, retry=%d, delay=%d, t0=%ld, t1=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
+                // if (k > 0)
+                if (Debug >= 1) {   // DEBUG
+                    fprintf(stderr, "[%s] %s: SUCCESS, try=%d, delay=%d, t0=%ld, dt=%ld timeout=%d\n", strtime(), __func__, k, dt, t0, t1-t0, timeout);
+                }
                 break;
             }
         }
@@ -375,19 +397,21 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
             iurl = ((iurl < 0) ? random() : iurl+1) % nurls;
             aurl = urls[iurl];
         } else if ((http_code / 100) == 4) {
-            // Client erred - can't continue
+            // Server error - can't continue
+            fprintf(stderr, "[%s] %s: %s\n", strtime(), __func__, "Server error - cannot continue");
+            fprintf(stderr, "[%s] %s: rc=%d, try=%d, delay=%d, t0=%ld, dt=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1-t0, timeout);
             break;
         } else {
             // sleep and retry
             dt = 1 + ((double)random()/(double)RAND_MAX) * (1 << k++);
             sleep(dt);
             t1 = time(NULL);
-            fprintf(stderr, "[%s] %s: rc=%d, retry=%d, delay=%d, t0=%ld, t1=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
-        }
-        if (Debug >= 2) {   // DEBUG
-            fprintf(stderr, "[%s] %s: rc=%d, retry=%d, delay=%d, t0=%ld, t1=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1, timeout);
         }
     } while ((t1 - t0) < timeout);
+    if (Debug >= 2 && (t1 - t0) > timeout) {   // DEBUG
+        fprintf(stderr, "[%s] %s: %s\n", strtime(), __func__, "Timeout: gave up...");
+        fprintf(stderr, "[%s] %s: rc=%d, try=%d, delay=%d, t0=%ld, dt=%ld timeout=%d\n", strtime(), __func__, ret, k, dt, t0, t1-t0, timeout);
+    }
 
     curl_slist_free_all(headerlist);            // Free the custom headers
     if (response) {
@@ -408,12 +432,16 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
     CURLcode ret = CURLE_FAILED_INIT;
     char *dbg = getenv("LIBWDA_DEBUG");
     if (dbg) {
-        if (strcmp("1", dbg)==0) {
-            Debug = 1;
+        if (strcmp("0", dbg)==0) {
+            Debug = 0;
         } else if (strcmp("2", dbg)==0) {
             Debug = 2;
         } else if (strcmp("3", dbg)==0) {
             Debug = 3;
+        } else if (strcmp("4", dbg)==0) {
+            Debug = 4;
+        } else {
+            Debug = 1;
         }
     } else {
        Debug = 0;
