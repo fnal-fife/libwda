@@ -344,13 +344,17 @@ static CURLcode perform_with_timeout(CURL *curl_handle,
         if (ca_path = getenv("SSL_CERT_DIR")) {
             // fprintf(stderr, "[%s] %s: ca_path='%s'\n", strtime(), __func__, ca_path);
             if (strlen(ca_path) > 0) {
-                fprintf(stderr, "[%s] %s: ****** ca_path='%s'\n", strtime(), __func__, ca_path);
+                if ( Debug >= 2 ) {
+                    fprintf(stderr, "[%s] %s: ****** ca_path='%s'\n", strtime(), __func__, ca_path);
+                }
                 curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 1);
                 ret = curl_easy_setopt(curl_handle, CURLOPT_CAPATH, ca_path);
                 if (ret != CURLE_OK) {  // Check for errors
                     fprintf(stderr, "%s: curl_easy_perform() failed: %s\n", __func__, curl_easy_strerror(ret));
                 } else {
-                    fprintf(stderr, "%s: curl_easy_perform() CURLOPT_CAPATH: %s\n", __func__, curl_easy_strerror(ret));
+                    if ( Debug >= 2 ) {
+                        fprintf(stderr, "%s: curl_easy_perform() CURLOPT_CAPATH: %s\n", __func__, curl_easy_strerror(ret));
+                    }
                 }
             }
         }
