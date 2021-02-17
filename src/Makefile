@@ -15,7 +15,7 @@ endif
 #
 MAJOR=2
 MINOR=29
-RELEASE=0
+RELEASE=1
 VERSION=$(MAJOR).$(MINOR)
 
 platform=$(shell uname -s)
