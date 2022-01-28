@@ -54,7 +54,7 @@ int main(void)
 
 //    const char *url = "http://dbdata0vm.fnal.gov:8099/ifbeam/data";
     // const char *url = "http://ifbcollectorgpvm04.fnal.gov:8088/ifbeam/data";
-    const char *url = "http://ifbcollectorgpvm04.fnal.gov:9090/ifbeam/data";
+    const char *url = "http://ifbcollectorgpvm05.fnal.gov:9090/ifbeam/data";
 
 
     Dataset ds;
@@ -65,6 +65,8 @@ int main(void)
     int error;
     char ss[81920];
     double dd[8192];
+
+    wda_global_init();
 
     setUserAgent("Test_ifbeam_1");                    // Set User-Agent header for HTTP request
 
@@ -304,6 +306,8 @@ int main(void)
     READ_OFF_MEMORY_STATUS(&stat);
     //
 # endif
+
+    wda_global_cleanup();
 
     return 0;
 }

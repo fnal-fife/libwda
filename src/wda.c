@@ -95,6 +95,17 @@ void read_off_memory_status(statm_t *result)
 
 
 /*
+ * Low level functions to work with LIBCURL globals
+ */
+int wda_global_init() {
+    return curl_global_init(CURL_GLOBAL_ALL);
+}
+
+void wda_global_cleanup() {
+    curl_global_cleanup();
+}
+
+/*
  * Generates a random string of specified size
  */
 static char *randStr(char *dst, int size)
@@ -680,7 +691,6 @@ static void postHTTP_retry(const char *url, const char *headers[], size_t nheade
         }
         curl_easy_cleanup(curl);                                                /* Cleanup                      */
     }
-    curl_global_cleanup();                                                      /* Cleanup                      */
     *status = ret;
 }
 

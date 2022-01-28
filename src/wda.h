@@ -36,6 +36,12 @@ void *wda_get_response_buffer(HttpResponse *response);
 void wda_release_response_buffer(HttpResponse *response);
 
 
+/*
+ * Low level functions to work with LIBCURL globals. Must be called at the beginning and at the end of program, respectively!
+ */
+int wda_global_init();
+
+void wda_global_cleanup();
 
 /*
  * Low level generic function which returns the whole buffer received
