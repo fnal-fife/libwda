@@ -83,5 +83,6 @@ test_ifbeam: test_ifbeam.o $(OBJ)
 else
 test_ifbeam: test_ifbeam.o $(OBJ)
 	gcc -o ifbeam_test test_ifbeam.o $(CXXFLAGS) $(OBJ) -lcurl $(LDFLAGS) -lssl -lcrypto
+	gcc -o test_icarus_con test_icarus_con.c $(CXXFLAGS) $(OBJ) -lcurl $(LDFLAGS) -lssl -lcrypto
 endif
 
