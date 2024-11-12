@@ -459,7 +459,7 @@ static HttpResponse mget_http_response(const char *url, const char *urls[], size
             Debug = 1;
         }
     } else {
-       Debug = 0;
+        Debug = 0;
     }
 
     HttpResponse response;
@@ -722,8 +722,8 @@ static HttpResponse get_data_rows(const char *url, const char *headers[], size_t
     }
     /* Calculate the number of rows */
     for (i = 0, k = 0; i < response.size; i++) {
-      if (response.memory[i]=='\n')
-          k++;
+        if (response.memory[i]=='\n')
+            k++;
     }
 # if DEBUG
     fprintf(stderr, "get_data_rows: %d lines retrieved\n", k);

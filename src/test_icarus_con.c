@@ -67,8 +67,8 @@ int main(void)
     fprintf(stderr, "Before getting dataset\n");
     read_off_memory_status(&stat);
     //
-    // Loop 3 times to exercise the API
-    for (l = 0; l < 3; l++) {   
+    // Loop N times to exercise the API
+    for (l = 0; l < 1; l++) {
         ds = getDataWithTimeout(url, "Icarus Condition Test", 3, &error);     // Get the data
         // More complex use case
         // const char *urls[] = {url, url, url, url};
@@ -84,15 +84,15 @@ int main(void)
         fprintf(stderr, "\nntuples=%d\n\n", getNtuples(ds));// Get the number of rows in the dataset
 
         tu = getTuple(ds, 1);                               // Returns NULL if out of range
-        fprintf(stderr, "First tuple...\n");
+        fprintf(stderr, "Get first tuple...\n");
         tu = getTuple(ds, 2);                               // Returns NULL if out of range
-        fprintf(stderr, "Second tuple...\n");
+        fprintf(stderr, "Get second tuple...\n");
         // tu = getFirstTuple(ds);                             // Get the very first row
 
-        // If we get something print it
+        // If we get something then print it
         if (tu != NULL) {                                               // If everything is OK
             int nc = getNfields(tu);                                    // Get the number of columns in this row
-            fprintf(stderr, "ncols=%d\n", nc);
+            fprintf(stderr, "Number of columns=%d\n", nc);
 
             for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
                 len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
@@ -109,7 +109,7 @@ int main(void)
 
         if (tu != NULL) {                                               // If everything is OK
             int nc = getNfields(tu);                                    // Get the number of columns in this row
-            fprintf(stderr, "ncols=%d\n", nc);
+            fprintf(stderr, "Number of columns=%d\n", nc);
 
             for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
                 len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
@@ -125,19 +125,19 @@ int main(void)
         int nrow, ncol;
         nrow = ncol = 0;
         while (tu = getNextTuple(ds)) {
-            if (nrow%10000 == 0) {
+            if (nrow % 10000 == 0) {
                 //
                 fprintf(stderr, "Accessing tuple [%d]\n", nrow);
                 read_off_memory_status(&stat);
                 //
-            } 
+            }
             //fprintf(stderr, ".");
             int nc = getNfields(tu);                                    // Get the number of columns in this row
             //fprintf(stderr, "ncols=%d\n", nc);
 
             for (i = 0; i < nc; i++) {                                  // Loop to get column data as a string
                 len = getStringValue(tu, i, ss, sizeof (ss), &err);     // Returns string length
-                if (nrow%10000 == 0) 
+                if (nrow % 10000 == 0)
                     fprintf(stderr, "[%d]: l=%d, s='%s'\n", i, len, ss);    // Print the results
                 ncol++;
             }
